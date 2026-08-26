@@ -3,6 +3,7 @@ set -u
 
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ADDON_ID="dune-chat-monitor"
+SERVICE_NAME="dune-chat-monitor.service"
 CONFIG_FILE="$PROJECT_DIR/config/dune-chat-monitor.env"
 FAIL=0
 
@@ -16,9 +17,9 @@ echo "----------------------------------------"
 if [[ -f "$CONFIG_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$CONFIG_FILE"
-  ok "Runtime configuration: $CONFIG_FILE"
+  ok "Configuration: $CONFIG_FILE"
 else
-  bad "Runtime configuration not found; run ./install.sh first"
+  bad "Configuration not found; run ./install.sh first"
 fi
 
 docker info >/dev/null 2>&1 \
@@ -28,67 +29,31 @@ docker info >/dev/null 2>&1 \
 if [[ -n "${DUNE_ROOT:-}" && -f "$DUNE_ROOT/VERSION" ]]; then
   ok "Dune install: $DUNE_ROOT ($(cat "$DUNE_ROOT/VERSION" 2>/dev/null))"
 else
-  bad "Dune installation not found from runtime configuration"
+  bad "Dune installation not found from configuration"
 fi
 
-if [[ -n "${RMQ_CONTAINER:-}" ]] \
-  && docker inspect "$RMQ_CONTAINER" >/dev/null 2>&1; then
-  ok "RabbitMQ container: $RMQ_CONTAINER"
+if [[ -n "${TEXT_ROUTER_CONTAINER:-}" ]] \
+  && docker inspect "$TEXT_ROUTER_CONTAINER" >/dev/null 2>&1; then
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$TEXT_ROUTER_CONTAINER" 2>/dev/null)" == "true" ]]; then
+    ok "Text Router running: $TEXT_ROUTER_CONTAINER"
+  else
+    bad "Text Router exists but is not running"
+  fi
 else
-  bad "RabbitMQ container missing"
+  bad "Text Router container not found"
 fi
 
-if [[ -n "${RMQ_CONTAINER:-}" ]] \
-  && docker exec "$RMQ_CONTAINER" rabbitmqctl list_exchanges -p / name 2>/dev/null \
-    | grep -qx "${RMQ_EXCHANGE:-chat.intercept}"; then
-  ok "Chat exchange: ${RMQ_EXCHANGE:-chat.intercept}"
+if [[ -n "${TEXT_ROUTER_CONTAINER:-}" ]] \
+  && docker logs --tail 1 "$TEXT_ROUTER_CONTAINER" >/dev/null 2>&1; then
+  ok "Text Router logs readable by current user"
 else
-  bad "Chat exchange not found"
+  bad "Cannot read Text Router logs"
 fi
 
-if [[ -n "${RMQ_CONTAINER:-}" ]] \
-  && docker exec "$RMQ_CONTAINER" \
-       rabbitmqctl list_queues -p / name consumers messages_ready messages_unacknowledged \
-       2>/dev/null \
-    | grep -E "^${RMQ_QUEUE:-dune.chat.monitor}[[:space:]]" >/dev/null; then
-
-  QUEUE_LINE="$(
-    docker exec "$RMQ_CONTAINER" \
-      rabbitmqctl list_queues -p / name consumers messages_ready messages_unacknowledged \
-      2>/dev/null \
-      | grep -E "^${RMQ_QUEUE:-dune.chat.monitor}[[:space:]]" \
-      | head -1
-  )"
-
-  ok "Collector queue: $QUEUE_LINE"
+if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+  ok "Collector service active"
 else
-  bad "Collector queue not found"
-fi
-
-if [[ -n "${RMQ_CONTAINER:-}" ]] \
-  && docker exec "$RMQ_CONTAINER" \
-       rabbitmqctl list_user_permissions "${RMQ_USER:-dune_chat_monitor}" \
-       2>/dev/null \
-    | grep -F "${RMQ_USER:-dune_chat_monitor}" >/dev/null; then
-
-  PERMS="$(
-    docker exec "$RMQ_CONTAINER" \
-      rabbitmqctl list_user_permissions "${RMQ_USER:-dune_chat_monitor}" \
-      2>/dev/null \
-      | tail -n +2 \
-      | head -1
-  )"
-
-  ok "RabbitMQ permissions: $PERMS"
-else
-  bad "Collector RabbitMQ user/permissions missing"
-fi
-
-if docker inspect "$ADDON_ID" >/dev/null 2>&1 \
-  && [[ "$(docker inspect -f '{{.State.Running}}' "$ADDON_ID" 2>/dev/null)" == "true" ]]; then
-  ok "Collector container running"
-else
-  bad "Collector container not running"
+  bad "Collector service not active"
 fi
 
 if [[ -n "${DUNE_ROOT:-}" \
@@ -98,18 +63,17 @@ else
   bad "Addon UI not installed"
 fi
 
-if [[ -n "${DUNE_ROOT:-}" \
-   && -f "$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/web/live/status.json" ]]; then
+if [[ -n "${EXPORT_DIR:-}" && -f "$EXPORT_DIR/status.json" ]]; then
   ok "Collector status export exists"
 
-  python3 - \
-    "$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/web/live/status.json" <<'PY'
+  python3 - "$EXPORT_DIR/status.json" <<'PY'
 import json
 import sys
 
 path = sys.argv[1]
 try:
     data = json.load(open(path, encoding="utf-8"))
+    print("     source:", data.get("source"))
     print("     connected:", data.get("collectorConnected"))
     print("     messages:", data.get("messageCount"))
     print("     last:", data.get("lastReceivedAt"))
@@ -122,14 +86,10 @@ else
   warn "No status.json yet"
 fi
 
-if [[ -f "$PROJECT_DIR/data/chat.sqlite3" ]]; then
-  ok "Private SQLite database: $PROJECT_DIR/data/chat.sqlite3"
+if [[ -n "${DB_PATH:-}" && -f "$DB_PATH" ]]; then
+  ok "Private SQLite database: $DB_PATH"
 else
   warn "SQLite database not created yet"
-fi
-
-if [[ -d "$PROJECT_DIR/logs" ]]; then
-  ok "Runtime log directory reserved: $PROJECT_DIR/logs"
 fi
 
 echo "----------------------------------------"

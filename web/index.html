@@ -1,42 +1,39 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Dune Chat Monitor</title>
-  <link rel="stylesheet" href="./addon.css" />
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<main class="shell">
-  <header class="header">
-    <div>
-      <p class="eyebrow">Community Addon</p>
-      <h1>Dune Chat Monitor</h1>
-      <p id="serverName" class="muted">Read-only RAW capture</p>
-    </div>
-    <div id="connectionBadge" class="badge badge-warn">Starting…</div>
-  </header>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <h1>Dune Chat Monitor</h1>
+        <p id="serverName">Loading…</p>
+      </div>
+      <div id="statusBadge" class="badge badge-warn">CONNECTING</div>
+    </header>
 
-  <section class="stats">
-    <article class="stat"><span>Captured</span><strong id="messageCount">0</strong></article>
-    <article class="stat"><span>Queue</span><strong id="queueName">—</strong></article>
-    <article class="stat"><span>Last message</span><strong id="lastMessage">—</strong></article>
-  </section>
+    <section class="toolbar">
+      <select id="channelFilter" aria-label="Channel filter">
+        <option value="">All channels</option>
+      </select>
+      <input id="searchInput" type="search" placeholder="Search sender or message…">
+      <button id="refreshButton" type="button">Refresh</button>
+    </section>
 
-  <section class="panel controls">
-    <div class="field">
-      <label for="search">Filter RAW capture</label>
-      <input id="search" type="search" placeholder="ELOTEST, WilliamDG, routing key…" />
-    </div>
-    <button id="refresh" type="button">Refresh</button>
-  </section>
+    <section class="meta">
+      <span id="messageCount">0 messages</span>
+      <span id="lastUpdate">Last update: —</span>
+    </section>
 
-  <section class="panel">
-    <h2>RAW Chat Capture</h2>
-    <p class="muted">Diagnostic view. No Dune database access and no game queue consumption.</p>
-    <div id="messages" class="messages"><p class="empty">Waiting for collector data…</p></div>
-  </section>
-</main>
-<script src="./addon.js"></script>
+    <section id="messages" class="messages">
+      <div class="empty">Waiting for chat data…</div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
 </body>
 </html>
