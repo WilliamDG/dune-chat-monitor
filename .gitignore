@@ -1,11 +1,18 @@
-﻿# Local configuration / secrets
+# Local/runtime configuration and secrets
 .env
 .env.*
 !.env.example
 
+config/*
+!config/.gitkeep
+
 # Runtime data
 data/*
 !data/.gitkeep
+
+# Runtime logs
+logs/*
+!logs/.gitkeep
 
 # SQLite
 *.sqlite
@@ -20,7 +27,6 @@ __pycache__/
 
 # Logs
 *.log
-logs/
 
 # OS / editors
 .DS_Store
