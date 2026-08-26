@@ -7,7 +7,7 @@ Addon code stays in this repository. The Community Index points server owners to
 1. Remove the private RedBlink local-development compatibility workaround from the test server, or confirm it is no longer needed.
 2. Verify the addon works with only the permissions declared in `addon.json`.
 3. Confirm the collector still has no RabbitMQ consumer and no direct Dune DB credentials/SQL.
-4. Verify the privacy allowlist stores/exports only `Map` and `Proximity` and rejects private/direct channels.
+4. Verify the release documentation clearly states that all intercepted `TextChat` channels, including private/direct channels when exposed by Text Router, are retained as sensitive admin data.
 5. Validate and package:
 
 ```bash
@@ -19,11 +19,11 @@ bash scripts/package.sh
 
 ## Release
 
-For version `0.2.1`:
+For version `0.2.2`:
 
 ```bash
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.2.2
+git push origin v0.2.2
 ```
 
 GitHub Actions should publish the package and checksum.

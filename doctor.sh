@@ -117,7 +117,7 @@ fi
 if [[ -n "${DB_PATH:-}" && -f "$DB_PATH" ]]; then
   ok "Private SQLite database: $DB_PATH"
 
-  if python3 - "$DB_PATH" <<'PY_PRIVACY'
+  python3 - "$DB_PATH" <<'PY_CHANNELS'
 import sqlite3
 import sys
 
@@ -128,25 +128,26 @@ try:
         """
         SELECT channel, COUNT(*)
         FROM messages
-        WHERE lower(trim(channel)) NOT IN ('map', 'proximity')
         GROUP BY channel
-        ORDER BY channel
+        ORDER BY lower(channel), channel
         """
     ).fetchall()
 finally:
     conn.close()
 
 if rows:
-    print("     unexpected stored channels:", ", ".join(f"{channel}={count}" for channel, count in rows))
-    raise SystemExit(1)
-PY_PRIVACY
-  then
-    ok "Privacy filter: SQLite contains only Map/Proximity chat"
-  else
-    bad "Privacy filter: non-public chat is present in SQLite"
-  fi
+    print("     stored channels:", ", ".join(f"{channel}={count}" for channel, count in rows))
+else:
+    print("     stored channels: none yet")
+PY_CHANNELS
 else
   warn "SQLite database not created yet"
+fi
+
+if [[ -n "${EXPORT_DIR:-}" && -f "$EXPORT_DIR/history/index.json" ]]; then
+  ok "Lazy history index exists"
+else
+  warn "Lazy history index not created yet"
 fi
 
 echo "----------------------------------------"

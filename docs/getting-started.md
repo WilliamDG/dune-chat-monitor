@@ -31,6 +31,10 @@ bash -n install.sh update.sh uninstall.sh doctor.sh
 
 For the current local RedBlink v1.4.3 lifecycle issue, see `redblink-v1.4.3-local-addon-workaround.md`.
 
-## Public-chat privacy boundary
+## Chat channels and lazy history
 
-The collector stores only `Map` and `Proximity` messages. Other Text Router chat channels are rejected before SQLite storage/export, and any legacy non-public rows are removed from the addon's own SQLite database when the collector starts.
+The collector stores every intercepted `TextChat` channel and exposes channel totals in `status.json`. The UI builds its channel tabs dynamically, so new/unknown channel types do not require a frontend release.
+
+Only the newest `CHAT_PAGE_SIZE` messages are exported in `messages.json`. Older retained messages are exported in fixed-size chunks under `web/live/history/`; the browser loads those chunks only as the user scrolls toward the end of the currently loaded list.
+
+Because Text Router can include private/direct channels, treat the addon's SQLite database and generated history exports as sensitive administrative data.

@@ -136,7 +136,7 @@ say
 
 TIMEZONE="${TIMEZONE:-$(prompt_value "Timezone" "UTC")}"
 CHAT_RETENTION_DAYS="${CHAT_RETENTION_DAYS:-$(prompt_value "Retention days" "30")}"
-CHAT_EXPORT_LIMIT="${CHAT_EXPORT_LIMIT:-250}"
+CHAT_PAGE_SIZE="${CHAT_PAGE_SIZE:-50}"
 CHAT_BOOTSTRAP_SINCE="${CHAT_BOOTSTRAP_SINCE:-1h}"
 
 [[ "$CHAT_RETENTION_DAYS" =~ ^[0-9]+$ ]] \
@@ -149,7 +149,7 @@ ADDON_LIVE_DIR="$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/web/live"
 {
   printf 'TIMEZONE=%s\n' "$(env_quote "$TIMEZONE")"
   printf 'CHAT_RETENTION_DAYS=%s\n' "$(env_quote "$CHAT_RETENTION_DAYS")"
-  printf 'CHAT_EXPORT_LIMIT=%s\n' "$(env_quote "$CHAT_EXPORT_LIMIT")"
+  printf 'CHAT_PAGE_SIZE=%s\n' "$(env_quote "$CHAT_PAGE_SIZE")"
   printf 'CHAT_BOOTSTRAP_SINCE=%s\n' "$(env_quote "$CHAT_BOOTSTRAP_SINCE")"
   printf '\n'
   printf 'TEXT_ROUTER_CONTAINER=%s\n' "$(env_quote "$TEXT_ROUTER_CONTAINER")"

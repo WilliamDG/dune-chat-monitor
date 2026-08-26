@@ -157,6 +157,58 @@ button {
   color: #716a62;
 }
 
+
+.control-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #15130f;
+  color: #9d958b;
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .065em;
+  text-transform: uppercase;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6f675f;
+  box-shadow: 0 0 0 3px rgba(111, 103, 95, .1);
+}
+
+.live-badge.is-live {
+  border-color: rgba(106, 160, 112, .34);
+  color: #a7c7aa;
+  background: rgba(57, 91, 61, .11);
+}
+
+.live-badge.is-live .live-dot {
+  background: #78b47d;
+  box-shadow: 0 0 0 3px rgba(120, 180, 125, .11), 0 0 12px rgba(120, 180, 125, .25);
+}
+
+.live-badge.is-offline {
+  border-color: rgba(210, 119, 108, .25);
+  color: #c99690;
+}
+
+.live-badge.is-offline .live-dot {
+  background: #b46d65;
+}
+
 .refresh-button {
   display: inline-flex;
   align-items: center;
@@ -282,6 +334,48 @@ button {
   border-color: rgba(207, 127, 79, .45);
   color: #dc9366;
   background: rgba(207, 127, 79, .055);
+}
+
+.message-card.tone-whispers::before {
+  background: var(--purple);
+}
+
+.message-card.tone-sietch::before {
+  background: #7fa18b;
+}
+
+.message-card.tone-party::before,
+.message-card.tone-guild::before {
+  background: #7e94bd;
+}
+
+.message-card.tone-faction::before {
+  background: #b17878;
+}
+
+.tone-whispers .channel-badge {
+  border-color: rgba(157, 123, 216, .42);
+  color: #b69adf;
+  background: rgba(157, 123, 216, .055);
+}
+
+.tone-sietch .channel-badge {
+  border-color: rgba(127, 161, 139, .4);
+  color: #9ab9a3;
+  background: rgba(127, 161, 139, .055);
+}
+
+.tone-party .channel-badge,
+.tone-guild .channel-badge {
+  border-color: rgba(126, 148, 189, .4);
+  color: #9eafd0;
+  background: rgba(126, 148, 189, .055);
+}
+
+.tone-faction .channel-badge {
+  border-color: rgba(177, 120, 120, .4);
+  color: #c69292;
+  background: rgba(177, 120, 120, .055);
 }
 
 
@@ -411,6 +505,37 @@ button {
   letter-spacing: .18em;
 }
 
+
+.history-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 54px;
+  margin-top: 10px;
+  color: #777067;
+  font-size: .76rem;
+  text-align: center;
+  cursor: default;
+}
+
+.history-sentinel:not([hidden]) {
+  display: flex;
+}
+
+.history-sentinel[hidden] {
+  display: none;
+}
+
+.history-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #3c352d;
+  border-top-color: var(--gold-soft);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
 @media (max-width: 760px) {
   .chat-page {
     padding: 12px;
@@ -430,7 +555,7 @@ button {
     grid-row: 1;
   }
 
-  .refresh-button {
+  .control-actions {
     grid-column: 2;
     grid-row: 1;
   }
@@ -447,6 +572,15 @@ button {
 }
 
 @media (max-width: 430px) {
+  .live-badge {
+    min-width: 40px;
+    padding: 0 10px;
+  }
+
+  .live-badge #liveLabel {
+    display: none;
+  }
+
   .chat-meta {
     flex-direction: column;
     gap: 3px;

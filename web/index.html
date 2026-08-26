@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Dune Chat Monitor</title>
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=0.2.2">
 </head>
 <body>
   <main class="chat-page">
@@ -18,12 +18,19 @@
         <input id="searchInput" type="search" autocomplete="off" placeholder="Search player or message…">
       </label>
 
-      <button id="refreshButton" class="refresh-button" type="button" title="Refresh now" aria-label="Refresh now">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 0 0 6.2 6.2L4 8m16 8-2.2 1.8A7 7 0 0 1 5.6 15" />
-        </svg>
-        <span>Refresh</span>
-      </button>
+      <div class="control-actions">
+        <span id="liveBadge" class="live-badge is-live" aria-live="polite">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span id="liveLabel">Live</span>
+        </span>
+
+        <button id="refreshButton" class="refresh-button" type="button" title="Refresh now" aria-label="Refresh now">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 0 0 6.2 6.2L4 8m16 8-2.2 1.8A7 7 0 0 1 5.6 15" />
+          </svg>
+          <span>Refresh</span>
+        </button>
+      </div>
     </section>
 
     <div id="healthBanner" class="health-banner" hidden></div>
@@ -39,8 +46,10 @@
         <span>Waiting for chat data…</span>
       </div>
     </section>
+
+    <div id="historySentinel" class="history-sentinel" hidden></div>
   </main>
 
-  <script src="./app.js"></script>
+  <script src="./app.js?v=0.2.2"></script>
 </body>
 </html>

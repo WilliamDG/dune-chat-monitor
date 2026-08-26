@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "UTC")
 RETENTION_DAYS = max(1, int(os.environ.get("CHAT_RETENTION_DAYS", "30")))
-EXPORT_LIMIT = max(1, int(os.environ.get("CHAT_EXPORT_LIMIT", "250")))
+PAGE_SIZE = max(10, int(os.environ.get("CHAT_PAGE_SIZE", "50")))
 BOOTSTRAP_SINCE = os.environ.get("CHAT_BOOTSTRAP_SINCE", "1h").strip() or "1h"
 
 TEXT_ROUTER_CONTAINER = os.environ.get("TEXT_ROUTER_CONTAINER", "dune-text-router")
@@ -37,8 +37,6 @@ DOCKER_TS_RE = re.compile(
 )
 
 GAME_TS_FORMAT = "%Y.%m.%d-%H.%M.%S"
-PUBLIC_CHAT_CHANNELS = frozenset({"map", "proximity"})
-
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -162,6 +160,72 @@ def atomic_json(path: Path, payload: Any) -> None:
             pass
 
 
+def message_payload(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["message_id"],
+        "receivedAt": row["received_at"],
+        "dockerTimestamp": row["docker_timestamp"],
+        "gameTimestampUtc": row["game_timestamp_utc"],
+        "gameTimestampLocal": row["game_timestamp_local"],
+        "channel": row["channel"],
+        "from": row["funcom_id_from"],
+        "to": row["username_to"],
+        "message": row["message"],
+        "spoofed": bool(row["use_spoofed_username"]),
+        "spoofedUsername": row["spoofed_username"],
+        "origin": {
+            "x": row["origin_x"],
+            "y": row["origin_y"],
+            "z": row["origin_z"],
+        },
+        "interceptorSource": row["interceptor_source"],
+        "interceptorTarget": row["interceptor_target"],
+        "type": row["outer_type"],
+    }
+
+
+def message_select_sql(where: str = "") -> str:
+    return f"""
+        SELECT
+            id,
+            message_id,
+            received_at,
+            docker_timestamp,
+            game_timestamp_utc,
+            game_timestamp_local,
+            channel,
+            funcom_id_from,
+            username_to,
+            message,
+            use_spoofed_username,
+            spoofed_username,
+            origin_x,
+            origin_y,
+            origin_z,
+            interceptor_source,
+            interceptor_target,
+            outer_type
+        FROM messages
+        {where}
+    """
+
+
+def channel_summary(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT channel, COUNT(*) AS total
+        FROM messages
+        GROUP BY channel
+        ORDER BY lower(channel), channel
+        """
+    ).fetchall()
+    return [
+        {"name": str(row["channel"]), "count": int(row["total"] or 0)}
+        for row in rows
+        if str(row["channel"] or "").strip()
+    ]
+
+
 def status_payload(
     conn: sqlite3.Connection,
     *,
@@ -184,69 +248,126 @@ def status_payload(
         "messageCount": int(row["total"] or 0),
         "lastReceivedAt": row["last_received"],
         "updatedAt": iso_utc(),
+        "channels": channel_summary(conn),
         "error": error,
     }
 
 
-def export_messages(conn: sqlite3.Connection, connected: bool, error: str | None = None) -> None:
+def history_bucket_number(row_id: int) -> int:
+    return max(0, (int(row_id) - 1) // PAGE_SIZE)
+
+
+def history_file_name(bucket: int) -> str:
+    return f"chunk-{int(bucket):08d}.json"
+
+
+def history_bucket_bounds(bucket: int) -> tuple[int, int]:
+    start_id = int(bucket) * PAGE_SIZE + 1
+    end_id = start_id + PAGE_SIZE - 1
+    return start_id, end_id
+
+
+def history_index_payload(conn: sqlite3.Connection) -> dict[str, Any]:
     rows = conn.execute(
-        """
-        SELECT
-            message_id,
-            received_at,
-            docker_timestamp,
-            game_timestamp_utc,
-            game_timestamp_local,
-            channel,
-            funcom_id_from,
-            username_to,
-            message,
-            use_spoofed_username,
-            spoofed_username,
-            origin_x,
-            origin_y,
-            origin_z,
-            interceptor_source,
-            interceptor_target,
-            outer_type
-        FROM messages
-        ORDER BY id DESC
-        LIMIT ?
-        """,
-        (EXPORT_LIMIT,),
+        "SELECT id FROM messages ORDER BY id DESC"
     ).fetchall()
 
-    messages = []
+    buckets: dict[int, dict[str, int]] = {}
     for row in rows:
-        messages.append(
+        row_id = int(row["id"])
+        bucket = history_bucket_number(row_id)
+        current = buckets.setdefault(
+            bucket,
+            {"count": 0, "minId": row_id, "maxId": row_id},
+        )
+        current["count"] += 1
+        current["minId"] = min(current["minId"], row_id)
+        current["maxId"] = max(current["maxId"], row_id)
+
+    payload_buckets = []
+    for bucket in sorted(buckets, reverse=True):
+        meta = buckets[bucket]
+        payload_buckets.append(
             {
-                "id": row["message_id"],
-                "receivedAt": row["received_at"],
-                "dockerTimestamp": row["docker_timestamp"],
-                "gameTimestampUtc": row["game_timestamp_utc"],
-                "gameTimestampLocal": row["game_timestamp_local"],
-                "channel": row["channel"],
-                "from": row["funcom_id_from"],
-                "to": row["username_to"],
-                "message": row["message"],
-                "spoofed": bool(row["use_spoofed_username"]),
-                "spoofedUsername": row["spoofed_username"],
-                "origin": {
-                    "x": row["origin_x"],
-                    "y": row["origin_y"],
-                    "z": row["origin_z"],
-                },
-                "interceptorSource": row["interceptor_source"],
-                "interceptorTarget": row["interceptor_target"],
-                "type": row["outer_type"],
+                "key": str(bucket),
+                "file": history_file_name(bucket),
+                "count": meta["count"],
+                "minId": meta["minId"],
+                "maxId": meta["maxId"],
             }
         )
+
+    return {
+        "timezone": TIMEZONE_NAME,
+        "updatedAt": iso_utc(),
+        "pageSize": PAGE_SIZE,
+        "buckets": payload_buckets,
+    }
+
+
+def export_history_index(conn: sqlite3.Connection) -> None:
+    atomic_json(EXPORT_DIR / "history" / "index.json", history_index_payload(conn))
+
+
+def export_history_bucket(conn: sqlite3.Connection, bucket: int) -> None:
+    start_id, end_id = history_bucket_bounds(bucket)
+    rows = conn.execute(
+        message_select_sql("WHERE id BETWEEN ? AND ? ORDER BY id DESC"),
+        (start_id, end_id),
+    ).fetchall()
+    path = EXPORT_DIR / "history" / history_file_name(bucket)
+    if not rows:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    atomic_json(
+        path,
+        {
+            "timezone": TIMEZONE_NAME,
+            "bucket": str(bucket),
+            "updatedAt": iso_utc(),
+            "messages": [message_payload(row) for row in rows],
+        },
+    )
+
+
+def rebuild_history(conn: sqlite3.Connection) -> None:
+    history_dir = EXPORT_DIR / "history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    for path in history_dir.glob("*.json"):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+    index = history_index_payload(conn)
+    for bucket in index["buckets"]:
+        export_history_bucket(conn, int(bucket["key"]))
+    atomic_json(history_dir / "index.json", index)
+
+
+def export_messages(
+    conn: sqlite3.Connection,
+    connected: bool,
+    error: str | None = None,
+    *,
+    history_bucket: int | None = None,
+) -> None:
+    rows = conn.execute(
+        message_select_sql("ORDER BY id DESC LIMIT ?"),
+        (PAGE_SIZE,),
+    ).fetchall()
+
+    messages = [message_payload(row) for row in rows]
 
     atomic_json(
         EXPORT_DIR / "messages.json",
         {
             "timezone": TIMEZONE_NAME,
             "updatedAt": iso_utc(),
+            "pageSize": PAGE_SIZE,
             "messages": messages,
         },
     )
@@ -255,17 +376,9 @@ def export_messages(conn: sqlite3.Connection, connected: bool, error: str | None
         status_payload(conn, connected=connected, error=error),
     )
 
-
-def cleanup_disallowed_channels(conn: sqlite3.Connection) -> int:
-    cur = conn.execute(
-        """
-        DELETE FROM messages
-        WHERE lower(trim(channel)) NOT IN ('map', 'proximity')
-        """
-    )
-    conn.commit()
-    return max(0, int(cur.rowcount or 0))
-
+    if history_bucket is not None:
+        export_history_bucket(conn, history_bucket)
+        export_history_index(conn)
 
 def cleanup_old(conn: sqlite3.Connection) -> None:
     cutoff = now_utc() - timedelta(days=RETENTION_DAYS)
@@ -274,10 +387,6 @@ def cleanup_old(conn: sqlite3.Connection) -> None:
         (iso_utc(cutoff),),
     )
     conn.commit()
-
-
-def is_public_chat_channel(value: str | None) -> bool:
-    return (value or "").strip().lower() in PUBLIC_CHAT_CHANNELS
 
 
 def safe_preview(value: str | None, limit: int = 120) -> str:
@@ -364,7 +473,7 @@ def decode_chat_line(line: str) -> dict[str, Any] | None:
     }
 
 
-def save_message(conn: sqlite3.Connection, message: dict[str, Any]) -> bool:
+def save_message(conn: sqlite3.Connection, message: dict[str, Any]) -> int | None:
     cur = conn.execute(
         """
         INSERT OR IGNORE INTO messages (
@@ -410,7 +519,9 @@ def save_message(conn: sqlite3.Connection, message: dict[str, Any]) -> bool:
         message,
     )
     conn.commit()
-    return cur.rowcount > 0
+    if cur.rowcount <= 0:
+        return None
+    return int(cur.lastrowid)
 
 
 def docker_container_running() -> bool:
@@ -481,23 +592,12 @@ def stream_logs(conn: sqlite3.Connection) -> None:
         if not message:
             continue
 
-        # Advance the log cursor even for channels we intentionally reject so
-        # private traffic is not replayed on the next collector restart.
         if docker_ts:
             set_state(conn, "last_docker_timestamp", docker_ts)
 
-        if not is_public_chat_channel(message["channel"]):
-            print(
-                "[SKIP] non-public chat "
-                f"channel={message['channel']} "
-                f"id={message['message_id']}",
-                flush=True,
-            )
-            continue
+        inserted_id = save_message(conn, message)
 
-        inserted = save_message(conn, message)
-
-        if not inserted:
+        if inserted_id is None:
             continue
 
         handled_since_cleanup += 1
@@ -513,9 +613,14 @@ def stream_logs(conn: sqlite3.Connection) -> None:
 
         if handled_since_cleanup >= 100:
             cleanup_old(conn)
+            rebuild_history(conn)
             handled_since_cleanup = 0
 
-        export_messages(conn, connected=True)
+        export_messages(
+            conn,
+            connected=True,
+            history_bucket=history_bucket_number(inserted_id),
+        )
 
     rc = proc.wait()
     raise RuntimeError(f"docker logs exited with code {rc}")
@@ -525,14 +630,8 @@ def main() -> int:
     ensure_dirs()
     conn = open_db()
 
-    removed_private = cleanup_disallowed_channels(conn)
-    if removed_private:
-        print(
-            f"[PRIVACY] removed {removed_private} previously stored non-public chat message(s)",
-            flush=True,
-        )
-
     cleanup_old(conn)
+    rebuild_history(conn)
     export_messages(conn, connected=False, error="Waiting for text-router log stream")
 
     retry = 2

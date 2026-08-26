@@ -20,6 +20,16 @@ if grep -q '^SERVER_NAME=' "$CONFIG_FILE" 2>/dev/null; then
   echo "[OK] Removed obsolete SERVER_NAME from local configuration."
 fi
 
+# v0.2.2 replaces the old fixed export limit with lazy history pages.
+if grep -q '^CHAT_EXPORT_LIMIT=' "$CONFIG_FILE" 2>/dev/null; then
+  sed -i '/^CHAT_EXPORT_LIMIT=/d' "$CONFIG_FILE"
+  echo "[OK] Removed obsolete CHAT_EXPORT_LIMIT from local configuration."
+fi
+if ! grep -q '^CHAT_PAGE_SIZE=' "$CONFIG_FILE" 2>/dev/null; then
+  printf '\nCHAT_PAGE_SIZE="50"\n' >> "$CONFIG_FILE"
+  echo "[OK] Added CHAT_PAGE_SIZE=50 for lazy history loading."
+fi
+
 INSTALL_DIR="$DUNE_ROOT/runtime/addons/installed/$ADDON_ID"
 LIVE_DIR="$INSTALL_DIR/web/live"
 

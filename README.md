@@ -6,7 +6,7 @@ A read-only chat monitor addon for the RedBlink Dune: Awakening self-hosted Dock
 
 ## What it does
 
-Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts structured public `TextChat` messages, stores them in its **own SQLite database**, and exposes a lightweight chat UI inside Dune Docker Console. The collector has a strict allowlist and retains only **Map** and **Proximity** chat.
+Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts structured `TextChat` messages, stores them in its **own SQLite database**, and exposes a lightweight chat UI inside Dune Docker Console. All Text Router chat channel types are retained and the UI creates channel tabs dynamically as channels appear.
 
 The collector does **not** consume RabbitMQ queues and does **not** connect to or write to the Dune PostgreSQL database.
 
@@ -41,14 +41,15 @@ This avoids:
 ## UI
 
 The chat panel is intentionally compact and Console-like:
-- channel tabs with message counts;
+- channel tabs for Map, Proximity, Guild, Faction, Party and Whispers, plus any additional channel types discovered at runtime, with total message counts;
 - sender search;
 - character name as the primary identity;
 - SteamID64 in parentheses when RedBlink exposes it;
 - Funcom ID fallback when identity resolution is unavailable;
 - coordinates only when the message contains a meaningful non-zero origin;
-- no permanent server-name or connection-status header;
-- collector errors only appear when something is actually wrong.
+- a compact **Live** status badge without a permanent server-name header;
+- collector errors only appear when something is actually wrong;
+- the newest messages load first, while older history is fetched incrementally as the user scrolls down.
 
 ## Runtime layout
 
@@ -130,7 +131,7 @@ Remove both data and local configuration:
 
 ## Stored chat fields
 
-For each allowed public `TextChat` message (`Map` or `Proximity`), the collector stores:
+For each intercepted `TextChat` message, regardless of channel type, the collector stores:
 - message ID;
 - channel type;
 - Funcom ID of the sender;
@@ -145,11 +146,13 @@ Messages are deduplicated by the game's `m_Id`.
 
 Character names and SteamID64 values are **not copied into the addon SQLite database**. They are resolved by the web UI from RedBlink's read-only player endpoints when the panel is open.
 
-## Privacy
+## Chat retention and privacy
 
-The Text Router may intercept channels beyond Map and Proximity, including private/direct chat. Dune Chat Monitor deliberately **does not store or export those channels**. The collector allowlist accepts only `Map` and `Proximity`, advances its Docker-log cursor past rejected messages, and never logs their text or sender.
+The Text Router may expose multiple channel types, including private/direct chat such as whispers. Dune Chat Monitor now stores **all intercepted `TextChat` channels** in its own SQLite database so the monitor can reproduce the complete server chat stream. Server owners should treat `data/chat.sqlite3` and the generated `web/live/` history files as sensitive administrative data and restrict access accordingly.
 
-On startup, the collector also removes any non-public rows that may exist in its own SQLite database from an older development build. This cleanup affects only `data/chat.sqlite3`; it never writes to Dune game data.
+The addon still never writes to Dune game data, never consumes Dune queues, and never copies resolved character names or SteamID64 values into its SQLite database.
+
+History is retained according to `CHAT_RETENTION_DAYS`. The browser initially loads only the latest `CHAT_PAGE_SIZE` messages; older history is split into fixed-size chunks and fetched lazily while scrolling.
 
 ## RedBlink v1.4.3 local-development note
 

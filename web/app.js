@@ -2,8 +2,16 @@ const IDENTITY_REFRESH_MS = 5 * 60 * 1000;
 const PROFILE_CONCURRENCY = 6;
 const MAX_PLAYER_PAGES = 10;
 const PLAYER_PAGE_SIZE = 200;
-const PUBLIC_CHANNELS = ["Map", "Proximity"];
-const PUBLIC_CHANNEL_BY_KEY = new Map(PUBLIC_CHANNELS.map((channel) => [channel.toLowerCase(), channel]));
+const REFRESH_MS = 1500;
+
+const CHANNEL_PRIORITY = [
+  "Map",
+  "Proximity",
+  "Guild",
+  "Faction",
+  "Party",
+  "Whispers",
+];
 
 const state = {
   messages: [],
@@ -12,17 +20,26 @@ const state = {
   identities: new Map(),
   identityDirectoryLoadedAt: 0,
   identityRefreshPromise: null,
+  identityProfileAttempts: new Map(),
   refreshing: false,
+  historyBuckets: [],
+  loadedHistoryBuckets: new Set(),
+  historyLoading: false,
+  historyError: "",
+  lastHeadSignature: "",
 };
 
 const els = {
   channelTabs: document.getElementById("channelTabs"),
   searchInput: document.getElementById("searchInput"),
   refreshButton: document.getElementById("refreshButton"),
+  liveBadge: document.getElementById("liveBadge"),
+  liveLabel: document.getElementById("liveLabel"),
   healthBanner: document.getElementById("healthBanner"),
   messageCount: document.getElementById("messageCount"),
   lastUpdate: document.getElementById("lastUpdate"),
   messages: document.getElementById("messages"),
+  historySentinel: document.getElementById("historySentinel"),
 };
 
 function escapeHtml(value) {
@@ -36,6 +53,14 @@ function escapeHtml(value) {
 
 function normalizeText(value) {
   return String(value ?? "").trim();
+}
+
+function normalizeChannel(value) {
+  return normalizeText(value);
+}
+
+function channelKey(value) {
+  return normalizeChannel(value).toLowerCase();
 }
 
 function configuredTimezone() {
@@ -54,6 +79,13 @@ function parseMessageDate(message) {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function messageSortValue(message) {
+  const parsed = parseMessageDate(message);
+  if (parsed) return parsed.getTime();
+  const received = new Date(message.receivedAt || "");
+  return Number.isNaN(received.getTime()) ? 0 : received.getTime();
 }
 
 function prettyTime(message) {
@@ -86,35 +118,80 @@ function prettyUpdateTime(value) {
   }).format(parsed);
 }
 
-function canonicalPublicChannel(channel) {
-  return PUBLIC_CHANNEL_BY_KEY.get(normalizeText(channel).toLowerCase()) || "";
-}
-
 function channelTone(channel) {
-  const value = canonicalPublicChannel(channel);
-  if (value === "Map") return "tone-map";
-  if (value === "Proximity") return "tone-proximity";
+  const key = channelKey(channel);
+  if (key === "map") return "tone-map";
+  if (key === "proximity") return "tone-proximity";
+  if (key === "whispers" || key === "whisper") return "tone-whispers";
+  if (key === "sietch") return "tone-sietch";
+  if (key === "party" || key === "group") return "tone-party";
+  if (key === "guild") return "tone-guild";
+  if (key === "faction") return "tone-faction";
   return "tone-default";
 }
 
-function renderChannelTabs() {
-  const counts = new Map(PUBLIC_CHANNELS.map((channel) => [channel, 0]));
-  for (const message of state.messages) {
-    const channel = canonicalPublicChannel(message.channel);
-    if (channel) counts.set(channel, (counts.get(channel) || 0) + 1);
+function globalChannelCounts() {
+  const counts = new Map();
+  const names = new Map();
+
+  for (const name of CHANNEL_PRIORITY) {
+    const key = channelKey(name);
+    names.set(key, name);
+    counts.set(key, 0);
   }
 
-  if (state.selectedChannel && !PUBLIC_CHANNELS.includes(state.selectedChannel)) {
+  for (const row of Array.isArray(state.status?.channels) ? state.status.channels : []) {
+    const name = normalizeChannel(row?.name);
+    if (!name) continue;
+    const key = channelKey(name);
+    names.set(key, name);
+    counts.set(key, Number(row?.count) || 0);
+  }
+
+  for (const message of state.messages) {
+    const name = normalizeChannel(message.channel);
+    if (!name) continue;
+    const key = channelKey(name);
+    if (!names.has(key)) names.set(key, name);
+    if (!counts.has(key)) counts.set(key, 0);
+  }
+
+  return { counts, names };
+}
+
+function sortedChannels() {
+  const { names } = globalChannelCounts();
+  const priority = new Map(CHANNEL_PRIORITY.map((name, index) => [name.toLowerCase(), index]));
+  return [...names.entries()]
+    .sort(([keyA, nameA], [keyB, nameB]) => {
+      const rankA = priority.has(keyA) ? priority.get(keyA) : 1000;
+      const rankB = priority.has(keyB) ? priority.get(keyB) : 1000;
+      if (rankA !== rankB) return rankA - rankB;
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+    })
+    .map(([, name]) => name);
+}
+
+function renderChannelTabs() {
+  const channels = sortedChannels();
+  const { counts } = globalChannelCounts();
+
+  if (state.selectedChannel && !channels.some((channel) => channelKey(channel) === channelKey(state.selectedChannel))) {
     state.selectedChannel = "";
   }
 
+  const total = Number(state.status?.messageCount) || state.messages.length;
   const tabs = [
-    { value: "", label: "All", count: state.messages.length },
-    ...PUBLIC_CHANNELS.map((channel) => ({ value: channel, label: channel, count: counts.get(channel) || 0 })),
+    { value: "", label: "All", count: total },
+    ...channels.map((channel) => ({
+      value: channel,
+      label: channel,
+      count: counts.get(channelKey(channel)) || 0,
+    })),
   ];
 
   els.channelTabs.innerHTML = tabs.map((tab) => {
-    const active = tab.value === state.selectedChannel;
+    const active = channelKey(tab.value) === channelKey(state.selectedChannel);
     return `<button class="channel-tab${active ? " is-active" : ""}" type="button" role="tab" aria-selected="${active}" data-channel="${escapeHtml(tab.value)}">${escapeHtml(tab.label)}<span class="tab-count">${tab.count}</span></button>`;
   }).join("");
 }
@@ -185,7 +262,7 @@ function searchableText(message) {
 function filteredMessages() {
   const query = els.searchInput.value.trim().toLowerCase();
   return state.messages.filter((message) => {
-    if (state.selectedChannel && message.channel !== state.selectedChannel) return false;
+    if (state.selectedChannel && channelKey(message.channel) !== channelKey(state.selectedChannel)) return false;
     return !query || searchableText(message).includes(query);
   });
 }
@@ -199,19 +276,59 @@ function locationMarkup(origin) {
     </span>`;
 }
 
+function totalStoredMessages() {
+  return Number(state.status?.messageCount) || state.messages.length;
+}
+
+function nextHistoryBucket() {
+  return state.historyBuckets.find((bucket) => !state.loadedHistoryBuckets.has(bucket.key)) || null;
+}
+
+function renderHistorySentinel() {
+  const next = nextHistoryBucket();
+  if (state.historyLoading) {
+    els.historySentinel.hidden = false;
+    els.historySentinel.innerHTML = `<span class="history-spinner" aria-hidden="true"></span><span>Loading older messages…</span>`;
+    return;
+  }
+  if (state.historyError) {
+    els.historySentinel.hidden = false;
+    els.historySentinel.innerHTML = `<span>Could not load older messages. Scroll here or press Refresh to retry.</span>`;
+    return;
+  }
+  if (next) {
+    els.historySentinel.hidden = false;
+    els.historySentinel.innerHTML = `<span>Scroll for older messages</span>`;
+    return;
+  }
+  els.historySentinel.hidden = true;
+  els.historySentinel.innerHTML = "";
+}
+
 function render() {
   renderChannelTabs();
   const filtered = filteredMessages();
+  const total = totalStoredMessages();
 
-  els.messageCount.textContent = state.messages.length
-    ? `${filtered.length} shown · ${state.messages.length} loaded`
-    : "No captured messages";
+  if (state.messages.length) {
+    const shown = filtered.length;
+    els.messageCount.textContent = total > state.messages.length
+      ? `${shown} shown · ${state.messages.length} loaded · ${total} total`
+      : `${shown} shown · ${state.messages.length} loaded`;
+  } else {
+    els.messageCount.textContent = total ? `${total} stored messages` : "No captured messages";
+  }
 
   const updated = prettyUpdateTime(state.status?.updatedAt);
   els.lastUpdate.textContent = updated ? `Updated ${updated}` : "";
 
   const statusError = normalizeText(state.status?.error);
   const collectorUnavailable = state.status && state.status.collectorConnected === false;
+  const live = state.status?.collectorConnected === true && !statusError;
+  els.liveBadge.classList.toggle("is-offline", !live);
+  els.liveBadge.classList.toggle("is-live", live);
+  els.liveLabel.textContent = live ? "Live" : "Offline";
+
   if (collectorUnavailable || statusError) {
     els.healthBanner.hidden = false;
     els.healthBanner.textContent = statusError || "Chat collector is currently unavailable.";
@@ -224,8 +341,9 @@ function render() {
     els.messages.innerHTML = `
       <div class="empty-state">
         <span class="empty-icon">•••</span>
-        <span>${state.messages.length ? "No messages match the current filters." : "Waiting for chat messages…"}</span>
+        <span>${state.messages.length ? "No loaded messages match the current filters yet." : "Waiting for chat messages…"}</span>
       </div>`;
+    renderHistorySentinel();
     return;
   }
 
@@ -263,6 +381,8 @@ function render() {
         </div>
       </article>`;
   }).join("");
+
+  renderHistorySentinel();
 }
 
 async function fetchJson(path) {
@@ -273,6 +393,66 @@ async function fetchJson(path) {
   });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json();
+}
+
+function messageKey(message) {
+  const id = normalizeText(message?.id);
+  if (id) return `id:${id}`;
+  return [message?.receivedAt, message?.channel, message?.from, message?.message].map(normalizeText).join("|");
+}
+
+function mergeMessages(incoming) {
+  const byKey = new Map(state.messages.map((message) => [messageKey(message), message]));
+  let added = 0;
+
+  for (const raw of Array.isArray(incoming) ? incoming : []) {
+    if (!raw || typeof raw !== "object") continue;
+    const message = { ...raw, channel: normalizeChannel(raw.channel) || "Unknown" };
+    const key = messageKey(message);
+    if (!byKey.has(key)) added += 1;
+    byKey.set(key, message);
+  }
+
+  state.messages = [...byKey.values()].sort((a, b) => messageSortValue(b) - messageSortValue(a));
+  return added;
+}
+
+function updateHistoryBuckets(payload) {
+  const buckets = Array.isArray(payload?.buckets) ? payload.buckets : [];
+  state.historyBuckets = buckets
+    .map((bucket) => ({
+      key: normalizeText(bucket?.key),
+      file: normalizeText(bucket?.file),
+      count: Number(bucket?.count) || 0,
+    }))
+    .filter((bucket) => bucket.key && bucket.file);
+}
+
+async function loadMoreHistory() {
+  if (state.historyLoading) return;
+  const bucket = nextHistoryBucket();
+  if (!bucket) {
+    renderHistorySentinel();
+    return;
+  }
+
+  state.historyLoading = true;
+  state.historyError = "";
+  renderHistorySentinel();
+
+  try {
+    const payload = await fetchJson(`./live/history/${encodeURIComponent(bucket.file)}`);
+    state.loadedHistoryBuckets.add(bucket.key);
+    mergeMessages(payload?.messages);
+    render();
+    void refreshPlayerIdentities(false);
+  } catch (error) {
+    state.historyError = String(error?.message || error);
+    renderHistorySentinel();
+  } finally {
+    state.historyLoading = false;
+    renderHistorySentinel();
+  }
 }
 
 function rowsFromPlayerPayload(payload) {
@@ -359,23 +539,35 @@ async function runBatched(items, worker, concurrency = PROFILE_CONCURRENCY) {
 
 async function refreshPlayerIdentities(force = false) {
   if (window.parent === window) return;
-  if (!force && Date.now() - state.identityDirectoryLoadedAt < IDENTITY_REFRESH_MS) return;
   if (state.identityRefreshPromise) return state.identityRefreshPromise;
 
   state.identityRefreshPromise = (async () => {
     try {
-      await loadPlayerDirectory();
+      const directoryStale = force || Date.now() - state.identityDirectoryLoadedAt >= IDENTITY_REFRESH_MS;
+      if (directoryStale) {
+        await loadPlayerDirectory();
+        state.identityDirectoryLoadedAt = Date.now();
+      }
 
+      const now = Date.now();
       const senders = [...new Set(state.messages.map((message) => normalizeText(message.from).toLowerCase()).filter(Boolean))];
       const identities = senders
         .map((sender) => state.identities.get(sender))
-        .filter((identity) => identity?.actorId && !identity.steamId);
+        .filter((identity) => {
+          if (!identity?.actorId || identity.steamId) return false;
+          const key = normalizeText(identity.funcomId).toLowerCase();
+          const lastAttempt = state.identityProfileAttempts.get(key) || 0;
+          return force || now - lastAttempt >= IDENTITY_REFRESH_MS;
+        });
+
+      for (const identity of identities) {
+        const key = normalizeText(identity.funcomId).toLowerCase();
+        if (key) state.identityProfileAttempts.set(key, now);
+      }
 
       await runBatched(identities, enrichIdentityProfile);
-      state.identityDirectoryLoadedAt = Date.now();
       render();
     } catch (error) {
-      // Identity enrichment is optional. Keep chat usable and fall back to Funcom IDs.
       console.debug("Dune Chat Monitor: player identity enrichment unavailable", error);
       state.identityDirectoryLoadedAt = Date.now();
     } finally {
@@ -386,24 +578,33 @@ async function refreshPlayerIdentities(force = false) {
   return state.identityRefreshPromise;
 }
 
+function headSignature(status, payload, history) {
+  const ids = Array.isArray(payload?.messages) ? payload.messages.slice(0, 4).map((message) => message?.id || "").join(",") : "";
+  const buckets = Array.isArray(history?.buckets) ? history.buckets.slice(0, 3).map((bucket) => `${bucket?.key}:${bucket?.count}`).join(",") : "";
+  return [status?.updatedAt || "", status?.messageCount || 0, payload?.updatedAt || "", ids, buckets].join("|");
+}
+
 async function refresh({ forceIdentities = false } = {}) {
   if (state.refreshing) return;
   state.refreshing = true;
   els.refreshButton.classList.add("is-busy");
 
   try {
-    const [status, payload] = await Promise.all([
+    const [status, payload, history] = await Promise.all([
       fetchJson("./live/status.json"),
       fetchJson("./live/messages.json"),
+      fetchJson("./live/history/index.json"),
     ]);
 
+    const signature = headSignature(status, payload, history);
+    const changed = signature !== state.lastHeadSignature;
+    state.lastHeadSignature = signature;
     state.status = status;
-    state.messages = Array.isArray(payload.messages)
-      ? payload.messages
-          .map((message) => ({ ...message, channel: canonicalPublicChannel(message.channel) }))
-          .filter((message) => Boolean(message.channel))
-      : [];
-    render();
+    updateHistoryBuckets(history);
+    state.historyError = "";
+    mergeMessages(payload?.messages);
+
+    if (changed || forceIdentities) render();
     void refreshPlayerIdentities(forceIdentities);
   } catch (error) {
     state.status = {
@@ -427,6 +628,13 @@ els.channelTabs.addEventListener("click", (event) => {
 
 els.searchInput.addEventListener("input", render);
 els.refreshButton.addEventListener("click", () => refresh({ forceIdentities: true }));
+els.historySentinel.addEventListener("click", () => loadMoreHistory());
+
+const historyObserver = new IntersectionObserver((entries) => {
+  if (entries.some((entry) => entry.isIntersecting)) void loadMoreHistory();
+}, { root: null, rootMargin: "320px 0px", threshold: 0 });
+
+historyObserver.observe(els.historySentinel);
 
 refresh();
-setInterval(refresh, 1500);
+setInterval(refresh, REFRESH_MS);
