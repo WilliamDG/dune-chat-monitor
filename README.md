@@ -2,7 +2,7 @@
 
 A read-only chat monitor addon for the RedBlink Dune: Awakening self-hosted Docker Console.
 
-> Development status: private/experimental. The current branch is intended for testing before public release.
+> Development status: public beta. Tested with RedBlink Dune Docker Console; feedback and compatibility reports are welcome.
 
 ## What it does
 
@@ -57,18 +57,18 @@ Recommended installation path:
 
 ```text
 /opt/dune-chat-monitor/
-├── collector/
-├── config/
-│   └── dune-chat-monitor.env
-├── data/
-│   └── chat.sqlite3
-├── logs/
-├── web/
-├── addon.json
-├── install.sh
-├── doctor.sh
-├── update.sh
-└── uninstall.sh
+â”œâ”€â”€ collector/
+â”œâ”€â”€ config/
+â”‚   â””â”€â”€ dune-chat-monitor.env
+â”œâ”€â”€ data/
+â”‚   â””â”€â”€ chat.sqlite3
+â”œâ”€â”€ logs/
+â”œâ”€â”€ web/
+â”œâ”€â”€ addon.json
+â”œâ”€â”€ install.sh
+â”œâ”€â”€ doctor.sh
+â”œâ”€â”€ update.sh
+â””â”€â”€ uninstall.sh
 ```
 
 The RedBlink Console receives only the installed addon copy under:
@@ -156,6 +156,6 @@ History is retained according to `CHAT_RETENTION_DAYS`. The browser initially lo
 
 ## RedBlink v1.4.3 local-development note
 
-RedBlink v1.4.3 currently marks manually installed addons that are absent from the Community Catalog as `removed`, despite the official local-development workflow. Our private test server uses a temporary, reversible Console compatibility patch only while the addon is not yet catalogued.
+RedBlink v1.4.3 currently marks manually installed addons that are absent from the Community Catalog as `removed`, despite the official local-development workflow. A temporary, reversible Console compatibility patch may be required during local development while the addon is not yet catalogued.
 
 See `docs/redblink-v1.4.3-local-addon-workaround.md`. This workaround is **not part of the addon runtime** and must not be shipped as a permanent RedBlink modification.
