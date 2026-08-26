@@ -1,47 +1,42 @@
 <!doctype html>
-<html lang="en" data-addon-id="my-dune-addon">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Dune Addon</title>
-    <link rel="stylesheet" href="./addon.css" />
-  </head>
-  <body>
-    <main class="shell">
-      <header class="header">
-        <div>
-          <p class="eyebrow">Community Addon</p>
-          <h1>My Dune Addon</h1>
-        </div>
-        <button id="refreshPlayers" type="button">Load Players</button>
-      </header>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dune Chat Monitor</title>
+  <link rel="stylesheet" href="./addon.css" />
+</head>
+<body>
+<main class="shell">
+  <header class="header">
+    <div>
+      <p class="eyebrow">Community Addon</p>
+      <h1>Dune Chat Monitor</h1>
+      <p id="serverName" class="muted">Read-only RAW capture</p>
+    </div>
+    <div id="connectionBadge" class="badge badge-warn">Starting…</div>
+  </header>
 
-      <section class="panel">
-        <h2>Player Snapshot</h2>
-        <p class="muted">
-          This sample reads player data through the console bridge. It needs the
-          <code>players:read</code> permission.
-        </p>
-        <div id="players" class="grid" aria-live="polite"></div>
-      </section>
+  <section class="stats">
+    <article class="stat"><span>Captured</span><strong id="messageCount">0</strong></article>
+    <article class="stat"><span>Queue</span><strong id="queueName">—</strong></article>
+    <article class="stat"><span>Last message</span><strong id="lastMessage">—</strong></article>
+  </section>
 
-      <section class="panel">
-        <h2>Read-Only Query</h2>
-        <p class="muted">
-          This sample runs a read-only SQL query through the console bridge. It
-          needs the <code>database:read</code> permission.
-        </p>
-        <button id="runQuery" type="button">Run Sample Query</button>
-        <pre id="queryResult" class="output">No query has run yet.</pre>
-      </section>
+  <section class="panel controls">
+    <div class="field">
+      <label for="search">Filter RAW capture</label>
+      <input id="search" type="search" placeholder="ELOTEST, WilliamDG, routing key…" />
+    </div>
+    <button id="refresh" type="button">Refresh</button>
+  </section>
 
-      <section class="panel">
-        <h2>Addon Log</h2>
-        <pre id="log" class="output">Ready.</pre>
-      </section>
-    </main>
-
-    <script src="./dune-addon-bridge.js"></script>
-    <script src="./addon.js"></script>
-  </body>
+  <section class="panel">
+    <h2>RAW Chat Capture</h2>
+    <p class="muted">Diagnostic view. No Dune database access and no game queue consumption.</p>
+    <div id="messages" class="messages"><p class="empty">Waiting for collector data…</p></div>
+  </section>
+</main>
+<script src="./addon.js"></script>
+</body>
 </html>

@@ -1,0 +1,24 @@
+services:
+  dune-chat-monitor:
+    build:
+      context: ./collector
+    container_name: dune-chat-monitor
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RMQ_HOST: ${RMQ_CONTAINER:-dune-rmq-game}
+      RMQ_PORT: "5672"
+      RMQ_VHOST: "/"
+      DB_PATH: /data/chat.sqlite3
+      EXPORT_DIR: /export
+    volumes:
+      - ./data:/data
+      - ${ADDON_LIVE_DIR}:/export
+    networks:
+      - dune-network
+
+networks:
+  dune-network:
+    external: true
+    name: ${DUNE_NETWORK:-dune-net}
