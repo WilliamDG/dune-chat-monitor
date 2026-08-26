@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "my-dune-addon",
+  "name": "My Dune Addon",
+  "description": "A starter addon for Dune Docker Console.",
+  "author": "Your Name",
+  "version": "0.1.0",
+  "type": "ui",
+  "entry": {
+    "navigation": "My Addon",
+    "path": "web/index.html"
+  },
+  "permissions": {
+    "players": ["read"],
+    "database": ["read"]
+  }
+}
