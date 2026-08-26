@@ -15,6 +15,15 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+env_quote() {
+  local v="$1"
+  v="${v//\\/\\\\}"
+  v="${v//\"/\\\"}"
+  v="${v//\$/\\$}"
+  v="${v//\`/\\\`}"
+  printf '"%s"' "$v"
+}
+
 detect_invoker_home() {
   if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
     getent passwd "$SUDO_USER" | cut -d: -f6
@@ -160,22 +169,22 @@ fi
 
 RMQ_PASSWORD="${RMQ_PASSWORD:-$(random_password)}"
 
-cat > "$ENV_FILE" <<EOF
-SERVER_NAME=$SERVER_NAME
-TIMEZONE=$TIMEZONE
-CHAT_RETENTION_DAYS=$CHAT_RETENTION_DAYS
-CHAT_EXPORT_LIMIT=250
-
-RMQ_CONTAINER=$RMQ_CONTAINER
-DUNE_NETWORK=$DUNE_NETWORK
-RMQ_QUEUE=$RMQ_QUEUE
-RMQ_USER=$RMQ_USER
-RMQ_PASSWORD=$RMQ_PASSWORD
-RMQ_EXCHANGE=$DEFAULT_EXCHANGE
-
-DUNE_ROOT=$DUNE_ROOT
-ADDON_LIVE_DIR=$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/web/live
-EOF
+{
+  printf 'SERVER_NAME=%s\n' "$(env_quote "$SERVER_NAME")"
+  printf 'TIMEZONE=%s\n' "$(env_quote "$TIMEZONE")"
+  printf 'CHAT_RETENTION_DAYS=%s\n' "$(env_quote "$CHAT_RETENTION_DAYS")"
+  printf 'CHAT_EXPORT_LIMIT=%s\n' "$(env_quote "250")"
+  printf '\n'
+  printf 'RMQ_CONTAINER=%s\n' "$(env_quote "$RMQ_CONTAINER")"
+  printf 'DUNE_NETWORK=%s\n' "$(env_quote "$DUNE_NETWORK")"
+  printf 'RMQ_QUEUE=%s\n' "$(env_quote "$RMQ_QUEUE")"
+  printf 'RMQ_USER=%s\n' "$(env_quote "$RMQ_USER")"
+  printf 'RMQ_PASSWORD=%s\n' "$(env_quote "$RMQ_PASSWORD")"
+  printf 'RMQ_EXCHANGE=%s\n' "$(env_quote "$DEFAULT_EXCHANGE")"
+  printf '\n'
+  printf 'DUNE_ROOT=%s\n' "$(env_quote "$DUNE_ROOT")"
+  printf 'ADDON_LIVE_DIR=%s\n' "$(env_quote "$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/web/live")"
+} > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 say
@@ -255,7 +264,10 @@ state[addon_id] = {
     "approvedPermissions": []
 }
 
-state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+state_path.write_text(
+    json.dumps(state, indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8"
+)
 PY
 
 ok "Addon installed and enabled"
