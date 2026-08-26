@@ -7,7 +7,8 @@ Addon code stays in this repository. The Community Index points server owners to
 1. Remove the private RedBlink local-development compatibility workaround from the test server, or confirm it is no longer needed.
 2. Verify the addon works with only the permissions declared in `addon.json`.
 3. Confirm the collector still has no RabbitMQ consumer and no direct Dune DB credentials/SQL.
-4. Validate and package:
+4. Verify the privacy allowlist stores/exports only `Map` and `Proximity` and rejects private/direct channels.
+5. Validate and package:
 
 ```bash
 node scripts/validate.js
@@ -18,11 +19,11 @@ bash scripts/package.sh
 
 ## Release
 
-For version `0.2.0`:
+For version `0.2.1`:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 GitHub Actions should publish the package and checksum.

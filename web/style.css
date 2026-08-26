@@ -245,9 +245,6 @@ button {
   background: var(--orange);
 }
 
-.message-card.tone-private::before {
-  background: var(--purple);
-}
 
 .message-content {
   padding: 13px 15px 13px 17px;
@@ -287,11 +284,6 @@ button {
   background: rgba(207, 127, 79, .055);
 }
 
-.tone-private .channel-badge {
-  border-color: rgba(157, 123, 216, .45);
-  color: #b79be6;
-  background: rgba(157, 123, 216, .055);
-}
 
 .message-time {
   flex: 0 0 auto;
@@ -397,9 +389,6 @@ button {
   stroke-linejoin: round;
 }
 
-.destination {
-  color: #877e74;
-}
 
 .empty-state {
   display: flex;

@@ -6,7 +6,7 @@ A read-only chat monitor addon for the RedBlink Dune: Awakening self-hosted Dock
 
 ## What it does
 
-Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts structured `TextChat` messages, stores them in its **own SQLite database**, and exposes a lightweight chat UI inside Dune Docker Console.
+Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts structured public `TextChat` messages, stores them in its **own SQLite database**, and exposes a lightweight chat UI inside Dune Docker Console. The collector has a strict allowlist and retains only **Map** and **Proximity** chat.
 
 The collector does **not** consume RabbitMQ queues and does **not** connect to or write to the Dune PostgreSQL database.
 
@@ -130,7 +130,7 @@ Remove both data and local configuration:
 
 ## Stored chat fields
 
-For each intercepted `TextChat` message, the collector stores:
+For each allowed public `TextChat` message (`Map` or `Proximity`), the collector stores:
 - message ID;
 - channel type;
 - Funcom ID of the sender;
@@ -147,7 +147,9 @@ Character names and SteamID64 values are **not copied into the addon SQLite data
 
 ## Privacy
 
-The Text Router may intercept channels beyond Map and Proximity depending on the game/server version. Administrators should decide which channels they intend to retain and expose before deploying the addon to other users.
+The Text Router may intercept channels beyond Map and Proximity, including private/direct chat. Dune Chat Monitor deliberately **does not store or export those channels**. The collector allowlist accepts only `Map` and `Proximity`, advances its Docker-log cursor past rejected messages, and never logs their text or sender.
+
+On startup, the collector also removes any non-public rows that may exist in its own SQLite database from an older development build. This cleanup affects only `data/chat.sqlite3`; it never writes to Dune game data.
 
 ## RedBlink v1.4.3 local-development note
 

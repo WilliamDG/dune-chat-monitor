@@ -116,6 +116,35 @@ fi
 
 if [[ -n "${DB_PATH:-}" && -f "$DB_PATH" ]]; then
   ok "Private SQLite database: $DB_PATH"
+
+  if python3 - "$DB_PATH" <<'PY_PRIVACY'
+import sqlite3
+import sys
+
+path = sys.argv[1]
+conn = sqlite3.connect(path)
+try:
+    rows = conn.execute(
+        """
+        SELECT channel, COUNT(*)
+        FROM messages
+        WHERE lower(trim(channel)) NOT IN ('map', 'proximity')
+        GROUP BY channel
+        ORDER BY channel
+        """
+    ).fetchall()
+finally:
+    conn.close()
+
+if rows:
+    print("     unexpected stored channels:", ", ".join(f"{channel}={count}" for channel, count in rows))
+    raise SystemExit(1)
+PY_PRIVACY
+  then
+    ok "Privacy filter: SQLite contains only Map/Proximity chat"
+  else
+    bad "Privacy filter: non-public chat is present in SQLite"
+  fi
 else
   warn "SQLite database not created yet"
 fi

@@ -2,6 +2,8 @@ const IDENTITY_REFRESH_MS = 5 * 60 * 1000;
 const PROFILE_CONCURRENCY = 6;
 const MAX_PLAYER_PAGES = 10;
 const PLAYER_PAGE_SIZE = 200;
+const PUBLIC_CHANNELS = ["Map", "Proximity"];
+const PUBLIC_CHANNEL_BY_KEY = new Map(PUBLIC_CHANNELS.map((channel) => [channel.toLowerCase(), channel]));
 
 const state = {
   messages: [],
@@ -84,36 +86,31 @@ function prettyUpdateTime(value) {
   }).format(parsed);
 }
 
+function canonicalPublicChannel(channel) {
+  return PUBLIC_CHANNEL_BY_KEY.get(normalizeText(channel).toLowerCase()) || "";
+}
+
 function channelTone(channel) {
-  const value = normalizeText(channel).toLowerCase();
-  if (value === "map") return "tone-map";
-  if (value === "proximity") return "tone-proximity";
-  if (value.includes("whisper") || value.includes("private") || value.includes("direct")) return "tone-private";
+  const value = canonicalPublicChannel(channel);
+  if (value === "Map") return "tone-map";
+  if (value === "Proximity") return "tone-proximity";
   return "tone-default";
 }
 
-function channelSort(left, right) {
-  const preferred = new Map([["Map", 0], ["Proximity", 1]]);
-  const l = preferred.has(left) ? preferred.get(left) : 100;
-  const r = preferred.has(right) ? preferred.get(right) : 100;
-  return l - r || left.localeCompare(right);
-}
-
 function renderChannelTabs() {
-  const counts = new Map();
+  const counts = new Map(PUBLIC_CHANNELS.map((channel) => [channel, 0]));
   for (const message of state.messages) {
-    const channel = normalizeText(message.channel) || "Unknown";
-    counts.set(channel, (counts.get(channel) || 0) + 1);
+    const channel = canonicalPublicChannel(message.channel);
+    if (channel) counts.set(channel, (counts.get(channel) || 0) + 1);
   }
 
-  const channels = [...counts.keys()].sort(channelSort);
-  if (state.selectedChannel && !counts.has(state.selectedChannel)) {
+  if (state.selectedChannel && !PUBLIC_CHANNELS.includes(state.selectedChannel)) {
     state.selectedChannel = "";
   }
 
   const tabs = [
     { value: "", label: "All", count: state.messages.length },
-    ...channels.map((channel) => ({ value: channel, label: channel, count: counts.get(channel) || 0 })),
+    ...PUBLIC_CHANNELS.map((channel) => ({ value: channel, label: channel, count: counts.get(channel) || 0 })),
   ];
 
   els.channelTabs.innerHTML = tabs.map((tab) => {
@@ -138,11 +135,6 @@ function formatCoordinate(value) {
   const number = numericCoordinate(value);
   if (number === null) return "—";
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(number);
-}
-
-function isPrivateChannel(channel) {
-  const value = normalizeText(channel).toLowerCase();
-  return value.includes("whisper") || value.includes("private") || value.includes("direct");
 }
 
 function avatarLetter(value) {
@@ -182,7 +174,6 @@ function searchableText(message) {
   const identity = identityFor(message);
   return [
     message.from,
-    message.to,
     message.message,
     message.channel,
     identity.name,
@@ -206,12 +197,6 @@ function locationMarkup(origin) {
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
       X ${escapeHtml(formatCoordinate(origin?.x))} · Y ${escapeHtml(formatCoordinate(origin?.y))} · Z ${escapeHtml(formatCoordinate(origin?.z))}
     </span>`;
-}
-
-function destinationMarkup(message) {
-  const destination = normalizeText(message.to);
-  if (!destination || !isPrivateChannel(message.channel)) return "";
-  return `<span class="destination">To ${escapeHtml(destination)}</span>`;
 }
 
 function render() {
@@ -252,7 +237,7 @@ function render() {
     const secondary = identity.secondary
       ? `<div class="sender-secondary">${escapeHtml(identity.secondary)}</div>`
       : "";
-    const footerParts = [locationMarkup(message.origin), destinationMarkup(message)].filter(Boolean).join("");
+    const footerParts = locationMarkup(message.origin);
 
     return `
       <article class="message-card ${channelTone(message.channel)}">
@@ -413,7 +398,11 @@ async function refresh({ forceIdentities = false } = {}) {
     ]);
 
     state.status = status;
-    state.messages = Array.isArray(payload.messages) ? payload.messages : [];
+    state.messages = Array.isArray(payload.messages)
+      ? payload.messages
+          .map((message) => ({ ...message, channel: canonicalPublicChannel(message.channel) }))
+          .filter((message) => Boolean(message.channel))
+      : [];
     render();
     void refreshPlayerIdentities(forceIdentities);
   } catch (error) {

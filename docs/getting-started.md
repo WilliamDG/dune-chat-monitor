@@ -30,3 +30,7 @@ bash -n install.sh update.sh uninstall.sh doctor.sh
 ```
 
 For the current local RedBlink v1.4.3 lifecycle issue, see `redblink-v1.4.3-local-addon-workaround.md`.
+
+## Public-chat privacy boundary
+
+The collector stores only `Map` and `Proximity` messages. Other Text Router chat channels are rejected before SQLite storage/export, and any legacy non-public rows are removed from the addon's own SQLite database when the collector starts.

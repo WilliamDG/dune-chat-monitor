@@ -37,6 +37,7 @@ DOCKER_TS_RE = re.compile(
 )
 
 GAME_TS_FORMAT = "%Y.%m.%d-%H.%M.%S"
+PUBLIC_CHAT_CHANNELS = frozenset({"map", "proximity"})
 
 
 def now_utc() -> datetime:
@@ -255,6 +256,17 @@ def export_messages(conn: sqlite3.Connection, connected: bool, error: str | None
     )
 
 
+def cleanup_disallowed_channels(conn: sqlite3.Connection) -> int:
+    cur = conn.execute(
+        """
+        DELETE FROM messages
+        WHERE lower(trim(channel)) NOT IN ('map', 'proximity')
+        """
+    )
+    conn.commit()
+    return max(0, int(cur.rowcount or 0))
+
+
 def cleanup_old(conn: sqlite3.Connection) -> None:
     cutoff = now_utc() - timedelta(days=RETENTION_DAYS)
     conn.execute(
@@ -262,6 +274,10 @@ def cleanup_old(conn: sqlite3.Connection) -> None:
         (iso_utc(cutoff),),
     )
     conn.commit()
+
+
+def is_public_chat_channel(value: str | None) -> bool:
+    return (value or "").strip().lower() in PUBLIC_CHAT_CHANNELS
 
 
 def safe_preview(value: str | None, limit: int = 120) -> str:
@@ -465,10 +481,21 @@ def stream_logs(conn: sqlite3.Connection) -> None:
         if not message:
             continue
 
-        inserted = save_message(conn, message)
-
+        # Advance the log cursor even for channels we intentionally reject so
+        # private traffic is not replayed on the next collector restart.
         if docker_ts:
             set_state(conn, "last_docker_timestamp", docker_ts)
+
+        if not is_public_chat_channel(message["channel"]):
+            print(
+                "[SKIP] non-public chat "
+                f"channel={message['channel']} "
+                f"id={message['message_id']}",
+                flush=True,
+            )
+            continue
+
+        inserted = save_message(conn, message)
 
         if not inserted:
             continue
@@ -497,6 +524,13 @@ def stream_logs(conn: sqlite3.Connection) -> None:
 def main() -> int:
     ensure_dirs()
     conn = open_db()
+
+    removed_private = cleanup_disallowed_channels(conn)
+    if removed_private:
+        print(
+            f"[PRIVACY] removed {removed_private} previously stored non-public chat message(s)",
+            flush=True,
+        )
 
     cleanup_old(conn)
     export_messages(conn, connected=False, error="Waiting for text-router log stream")
