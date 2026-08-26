@@ -1,17 +1,14 @@
-{
+﻿{
   "schemaVersion": 1,
-  "id": "my-dune-addon",
-  "name": "My Dune Addon",
-  "description": "A starter addon for Dune Docker Console.",
-  "author": "Your Name",
+  "id": "dune-chat-monitor",
+  "name": "Dune Chat Monitor",
+  "description": "Read-only web monitor for Dune: Awakening self-hosted server chat.",
+  "author": "WilliamDG",
   "version": "0.1.0",
   "type": "ui",
   "entry": {
-    "navigation": "My Addon",
+    "navigation": "Chat Monitor",
     "path": "web/index.html"
   },
-  "permissions": {
-    "players": ["read"],
-    "database": ["read"]
-  }
+  "permissions": {}
 }
