@@ -33,3 +33,6 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Release artifacts
+dist/

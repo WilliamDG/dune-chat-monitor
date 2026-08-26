@@ -134,7 +134,6 @@ ok "Dune version: $DUNE_VERSION"
 ok "Chat source: Docker logs from $TEXT_ROUTER_CONTAINER"
 say
 
-SERVER_NAME="${SERVER_NAME:-$(prompt_value "Server name" "Dune Server")}"
 TIMEZONE="${TIMEZONE:-$(prompt_value "Timezone" "UTC")}"
 CHAT_RETENTION_DAYS="${CHAT_RETENTION_DAYS:-$(prompt_value "Retention days" "30")}"
 CHAT_EXPORT_LIMIT="${CHAT_EXPORT_LIMIT:-250}"
@@ -148,7 +147,6 @@ CHAT_BOOTSTRAP_SINCE="${CHAT_BOOTSTRAP_SINCE:-1h}"
 ADDON_LIVE_DIR="$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/web/live"
 
 {
-  printf 'SERVER_NAME=%s\n' "$(env_quote "$SERVER_NAME")"
   printf 'TIMEZONE=%s\n' "$(env_quote "$TIMEZONE")"
   printf 'CHAT_RETENTION_DAYS=%s\n' "$(env_quote "$CHAT_RETENTION_DAYS")"
   printf 'CHAT_EXPORT_LIMIT=%s\n' "$(env_quote "$CHAT_EXPORT_LIMIT")"
@@ -201,7 +199,7 @@ if not isinstance(previous, dict):
 state[addon_id] = {
     **previous,
     "enabled": True,
-    "approvedPermissions": []
+    "approvedPermissions": ["players:read"]
 }
 
 state_path.write_text(
@@ -265,4 +263,5 @@ say "Refresh Dune Docker Console and open Addons -> Dune Chat Monitor."
 say
 say "Collector source: $TEXT_ROUTER_CONTAINER Docker logs"
 say "RabbitMQ changes: none"
-say "Dune database access: none"
+say "Collector Dune database access: none"
+say "UI player identity source: RedBlink read-only player API (players:read)"

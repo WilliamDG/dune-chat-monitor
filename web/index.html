@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-addon-id="dune-chat-monitor">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -7,30 +7,37 @@
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <main class="page">
-    <header class="topbar">
-      <div>
-        <h1>Dune Chat Monitor</h1>
-        <p id="serverName">Loading…</p>
+  <main class="chat-page">
+    <section class="control-surface" aria-label="Chat controls">
+      <div id="channelTabs" class="channel-tabs" role="tablist" aria-label="Chat channel"></div>
+
+      <label class="search-box" aria-label="Search chat">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m21 21-4.35-4.35m1.35-5.65a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
+        </svg>
+        <input id="searchInput" type="search" autocomplete="off" placeholder="Search player or message…">
+      </label>
+
+      <button id="refreshButton" class="refresh-button" type="button" title="Refresh now" aria-label="Refresh now">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 0 0 6.2 6.2L4 8m16 8-2.2 1.8A7 7 0 0 1 5.6 15" />
+        </svg>
+        <span>Refresh</span>
+      </button>
+    </section>
+
+    <div id="healthBanner" class="health-banner" hidden></div>
+
+    <section class="chat-meta" aria-live="polite">
+      <span id="messageCount">Loading chat…</span>
+      <span id="lastUpdate"></span>
+    </section>
+
+    <section id="messages" class="messages" aria-live="polite">
+      <div class="empty-state">
+        <span class="empty-icon">•••</span>
+        <span>Waiting for chat data…</span>
       </div>
-      <div id="statusBadge" class="badge badge-warn">CONNECTING</div>
-    </header>
-
-    <section class="toolbar">
-      <select id="channelFilter" aria-label="Channel filter">
-        <option value="">All channels</option>
-      </select>
-      <input id="searchInput" type="search" placeholder="Search sender or message…">
-      <button id="refreshButton" type="button">Refresh</button>
-    </section>
-
-    <section class="meta">
-      <span id="messageCount">0 messages</span>
-      <span id="lastUpdate">Last update: —</span>
-    </section>
-
-    <section id="messages" class="messages">
-      <div class="empty">Waiting for chat data…</div>
     </section>
   </main>
 

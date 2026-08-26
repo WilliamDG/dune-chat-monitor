@@ -15,7 +15,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 
-SERVER_NAME = os.environ.get("SERVER_NAME", "Dune Server")
 TIMEZONE_NAME = os.environ.get("TIMEZONE", "UTC")
 RETENTION_DAYS = max(1, int(os.environ.get("CHAT_RETENTION_DAYS", "30")))
 EXPORT_LIMIT = max(1, int(os.environ.get("CHAT_EXPORT_LIMIT", "250")))
@@ -178,7 +177,6 @@ def status_payload(
     ).fetchone()
 
     return {
-        "serverName": SERVER_NAME,
         "timezone": TIMEZONE_NAME,
         "source": f"docker-logs:{TEXT_ROUTER_CONTAINER}",
         "collectorConnected": connected,
@@ -246,7 +244,6 @@ def export_messages(conn: sqlite3.Connection, connected: bool, error: str | None
     atomic_json(
         EXPORT_DIR / "messages.json",
         {
-            "serverName": SERVER_NAME,
             "timezone": TIMEZONE_NAME,
             "updatedAt": iso_utc(),
             "messages": messages,

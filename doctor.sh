@@ -63,6 +63,34 @@ else
   bad "Addon UI not installed"
 fi
 
+if [[ -n "${DUNE_ROOT:-}" && -f "$DUNE_ROOT/runtime/addons/state.json" ]]; then
+  python3 - "$DUNE_ROOT/runtime/addons/state.json" "$ADDON_ID" <<'PY_STATE'
+import json
+import sys
+
+path, addon_id = sys.argv[1], sys.argv[2]
+try:
+    state = json.load(open(path, encoding="utf-8"))
+except Exception as exc:
+    print(f"[WARN] Could not parse addon state: {exc}")
+    raise SystemExit(0)
+
+addon = state.get(addon_id, {}) if isinstance(state, dict) else {}
+permissions = set(addon.get("approvedPermissions") or []) if isinstance(addon, dict) else set()
+lifecycle = str(addon.get("lifecycle") or "") if isinstance(addon, dict) else ""
+
+if "players:read" in permissions:
+    print("[OK] Addon permission approved: players:read")
+else:
+    print("[WARN] players:read is not approved; character/Steam identity enrichment may be unavailable")
+
+if lifecycle:
+    print(f"     addon lifecycle: {lifecycle}")
+    if lifecycle == "removed":
+        print("[WARN] RedBlink currently marks this local addon as removed; see docs/redblink-v1.4.3-local-addon-workaround.md")
+PY_STATE
+fi
+
 if [[ -n "${EXPORT_DIR:-}" && -f "$EXPORT_DIR/status.json" ]]; then
   ok "Collector status export exists"
 

@@ -1,30 +1,32 @@
 # Getting Started
 
-Use this template when you want to build a community addon for Dune Docker Console.
-
-## Files You Usually Edit
+Dune Chat Monitor is composed of two parts:
 
 ```text
-addon.json       addon name, version, entry path, and permissions
-web/index.html   page markup
-web/addon.js     addon behavior
-web/addon.css    addon styling
+collector/collector.py   host-side read-only Text Router log collector
+web/                     RedBlink Console addon UI
 ```
 
-## First Steps
+## Development files
 
-1. Click **Use this template** on GitHub.
-2. Update `addon.json` with your addon ID, name, author, and permissions.
-3. Update `data-addon-id` in `web/index.html` to match `addon.json.id`.
-4. Build your UI in `web/`.
-5. Run validation before committing:
+The files most commonly changed are:
 
-   ```bash
-   node scripts/validate.js
-   ```
+```text
+addon.json          addon metadata and permissions
+collector/          chat parsing/export logic
+web/index.html      addon markup
+web/app.js          chat UI and player identity enrichment
+web/style.css       addon styling
+install.sh          local host installation
+update.sh           local test update
+```
 
-For local layout work, open `web/index.html` in a browser and use mock data.
-Bridge requests only use the real Dune Docker Console bridge after the addon is
-installed inside Dune Docker Console.
+Validate before committing:
 
-For the full local testing workflow, see [Local Development](local-development.md).
+```bash
+node scripts/validate.js
+python3 -m py_compile collector/collector.py
+bash -n install.sh update.sh uninstall.sh doctor.sh
+```
+
+For the current local RedBlink v1.4.3 lifecycle issue, see `redblink-v1.4.3-local-addon-workaround.md`.

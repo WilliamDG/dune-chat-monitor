@@ -4,19 +4,15 @@ A read-only chat monitor addon for the RedBlink Dune: Awakening self-hosted Dock
 
 > Development status: private/experimental. The current branch is intended for testing before public release.
 
+## What it does
+
+Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts structured `TextChat` messages, stores them in its **own SQLite database**, and exposes a lightweight chat UI inside Dune Docker Console.
+
+The collector does **not** consume RabbitMQ queues and does **not** connect to or write to the Dune PostgreSQL database.
+
+For display-only player identity enrichment, the web UI requests RedBlink's existing read-only player API (`players:read`) so a Funcom chat identity can be shown as the in-game character name and, when available, SteamID64. The addon performs no SQL and stores no Dune database credentials.
+
 ## Architecture
-
-Dune Chat Monitor does **not** consume RabbitMQ queues and does **not** access the Dune game database.
-
-The collector runs as a small host-side systemd service and follows the existing `dune-text-router` Docker logs. It stores only lines emitted by the Text Router as:
-
-```text
-[... INF CLOG] Intercepted message ...
-```
-
-Those lines already contain the structured `TextChat` payload.
-
-Flow:
 
 ```text
 dune-text-router Docker logs
@@ -26,15 +22,33 @@ collector/collector.py
         |
         +--> data/chat.sqlite3
         |
-        +--> Dune Console addon web/live/*.json
+        +--> <DUNE_ROOT>/runtime/addons/installed/dune-chat-monitor/web/live/*.json
+                         |
+                         v
+                 RedBlink Console iframe
+                         |
+                         +--> read-only player identity lookup (players:read)
 ```
 
 This avoids:
 - consuming or competing with Dune RabbitMQ queues;
 - creating RabbitMQ users, queues, or bindings;
 - storing RabbitMQ administrative credentials;
-- accessing or modifying the Dune PostgreSQL database;
-- mounting the Docker socket into another container.
+- mounting the Docker socket into another container;
+- direct SQL or database credentials in the addon;
+- writing to Dune game data.
+
+## UI
+
+The chat panel is intentionally compact and Console-like:
+- channel tabs with message counts;
+- sender search;
+- character name as the primary identity;
+- SteamID64 in parentheses when RedBlink exposes it;
+- Funcom ID fallback when identity resolution is unavailable;
+- coordinates only when the message contains a meaningful non-zero origin;
+- no permanent server-name or connection-status header;
+- collector errors only appear when something is actually wrong.
 
 ## Runtime layout
 
@@ -56,7 +70,7 @@ Recommended installation path:
 └── uninstall.sh
 ```
 
-The RedBlink Console receives only the installed UI copy under:
+The RedBlink Console receives only the installed addon copy under:
 
 ```text
 <DUNE_ROOT>/runtime/addons/installed/dune-chat-monitor/
@@ -72,12 +86,13 @@ Clone the repository, then:
 
 The installer:
 1. detects the RedBlink Dune installation;
-2. writes local configuration;
+2. asks only for local runtime values such as timezone/retention;
 3. installs/enables the Console UI addon;
-4. installs a `dune-chat-monitor.service` systemd service;
-5. starts the collector.
+4. approves the read-only `players:read` addon permission for the manual/local install;
+5. installs a `dune-chat-monitor.service` systemd service;
+6. starts the collector.
 
-The installer does not modify RabbitMQ or the Dune database.
+No server name is required.
 
 ## Diagnose
 
@@ -115,7 +130,7 @@ Remove both data and local configuration:
 
 ## Stored chat fields
 
-For each intercepted `TextChat` message, the collector currently stores:
+For each intercepted `TextChat` message, the collector stores:
 - message ID;
 - channel type;
 - Funcom ID of the sender;
@@ -128,6 +143,14 @@ For each intercepted `TextChat` message, the collector currently stores:
 
 Messages are deduplicated by the game's `m_Id`.
 
+Character names and SteamID64 values are **not copied into the addon SQLite database**. They are resolved by the web UI from RedBlink's read-only player endpoints when the panel is open.
+
 ## Privacy
 
 The Text Router may intercept channels beyond Map and Proximity depending on the game/server version. Administrators should decide which channels they intend to retain and expose before deploying the addon to other users.
+
+## RedBlink v1.4.3 local-development note
+
+RedBlink v1.4.3 currently marks manually installed addons that are absent from the Community Catalog as `removed`, despite the official local-development workflow. Our private test server uses a temporary, reversible Console compatibility patch only while the addon is not yet catalogued.
+
+See `docs/redblink-v1.4.3-local-addon-workaround.md`. This workaround is **not part of the addon runtime** and must not be shipped as a permanent RedBlink modification.
