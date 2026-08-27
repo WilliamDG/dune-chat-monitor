@@ -12,10 +12,8 @@ import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 
-TIMEZONE_NAME = os.environ.get("TIMEZONE", "UTC")
 RETENTION_DAYS = max(1, int(os.environ.get("CHAT_RETENTION_DAYS", "30")))
 PAGE_SIZE = max(10, int(os.environ.get("CHAT_PAGE_SIZE", "50")))
 BOOTSTRAP_SINCE = os.environ.get("CHAT_BOOTSTRAP_SINCE", "1h").strip() or "1h"
@@ -46,14 +44,6 @@ def iso_utc(dt: datetime | None = None) -> str:
     return (dt or now_utc()).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def local_zone() -> ZoneInfo:
-    try:
-        return ZoneInfo(TIMEZONE_NAME)
-    except Exception:
-        return ZoneInfo("UTC")
-
-
-LOCAL_TZ = local_zone()
 
 
 def parse_game_timestamp(value: str | None) -> tuple[str | None, str | None]:
@@ -61,7 +51,7 @@ def parse_game_timestamp(value: str | None) -> tuple[str | None, str | None]:
         return None, None
     try:
         dt = datetime.strptime(value, GAME_TS_FORMAT).replace(tzinfo=timezone.utc)
-        return iso_utc(dt), dt.astimezone(LOCAL_TZ).isoformat()
+        return iso_utc(dt), None
     except Exception:
         return value, value
 
@@ -267,7 +257,6 @@ def status_payload(
     ).fetchone()
 
     return {
-        "timezone": TIMEZONE_NAME,
         "source": f"docker-logs:{TEXT_ROUTER_CONTAINER}",
         "collectorConnected": connected,
         "messageCount": int(row["total"] or 0),
@@ -323,7 +312,6 @@ def history_index_payload(conn: sqlite3.Connection) -> dict[str, Any]:
         )
 
     return {
-        "timezone": TIMEZONE_NAME,
         "updatedAt": iso_utc(),
         "pageSize": PAGE_SIZE,
         "buckets": payload_buckets,
@@ -350,7 +338,6 @@ def export_history_bucket(conn: sqlite3.Connection, bucket: int) -> None:
     atomic_json(
         path,
         {
-            "timezone": TIMEZONE_NAME,
             "bucket": str(bucket),
             "updatedAt": iso_utc(),
             "messages": [message_payload(row) for row in rows],
@@ -390,7 +377,6 @@ def export_messages(
     atomic_json(
         EXPORT_DIR / "messages.json",
         {
-            "timezone": TIMEZONE_NAME,
             "updatedAt": iso_utc(),
             "pageSize": PAGE_SIZE,
             "messages": messages,

@@ -37,6 +37,8 @@ The collector stores every intercepted `TextChat` channel and exposes channel to
 
 Only the newest `CHAT_PAGE_SIZE` messages are exported in `messages.json`. Older retained messages are exported in fixed-size chunks under `web/live/history/`; the browser loads those chunks only as the user scrolls toward the end of the currently loaded list.
 
+Timestamps are stored/exported in UTC. The web UI formats them in the browser's local timezone, so the addon does not require a configured server timezone.
+
 Because Text Router can include private/direct channels, treat the addon's SQLite database and generated history exports as sensitive administrative data.
 
 The UI resolves sender and whisper-recipient aliases through RedBlink's read-only player API. Player names open an action menu for copying SteamID/Funcom ID/name or opening the public Steam profile. Map chat displays the map inline with the channel badge (for example `MAP - Hagga Basin`) when stored map metadata is available and otherwise uses the current read-only player map as a best-effort fallback.

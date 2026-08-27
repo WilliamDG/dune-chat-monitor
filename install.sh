@@ -74,19 +74,6 @@ detect_dune_root() {
   return 1
 }
 
-prompt_value() {
-  local prompt="$1"
-  local default="$2"
-  local value=""
-
-  if [[ "${YES:-0}" == "1" ]]; then
-    printf '%s\n' "$default"
-    return
-  fi
-
-  read -r -p "$prompt [$default]: " value
-  printf '%s\n' "${value:-$default}"
-}
 
 YES=0
 for arg in "$@"; do
@@ -134,8 +121,7 @@ ok "Dune version: $DUNE_VERSION"
 ok "Chat source: Docker logs from $TEXT_ROUTER_CONTAINER"
 say
 
-TIMEZONE="${TIMEZONE:-$(prompt_value "Timezone" "UTC")}"
-CHAT_RETENTION_DAYS="${CHAT_RETENTION_DAYS:-$(prompt_value "Retention days" "30")}"
+CHAT_RETENTION_DAYS="${CHAT_RETENTION_DAYS:-30}"
 CHAT_PAGE_SIZE="${CHAT_PAGE_SIZE:-50}"
 CHAT_BOOTSTRAP_SINCE="${CHAT_BOOTSTRAP_SINCE:-1h}"
 
@@ -147,7 +133,6 @@ CHAT_BOOTSTRAP_SINCE="${CHAT_BOOTSTRAP_SINCE:-1h}"
 ADDON_LIVE_DIR="$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/web/live"
 
 {
-  printf 'TIMEZONE=%s\n' "$(env_quote "$TIMEZONE")"
   printf 'CHAT_RETENTION_DAYS=%s\n' "$(env_quote "$CHAT_RETENTION_DAYS")"
   printf 'CHAT_PAGE_SIZE=%s\n' "$(env_quote "$CHAT_PAGE_SIZE")"
   printf 'CHAT_BOOTSTRAP_SINCE=%s\n' "$(env_quote "$CHAT_BOOTSTRAP_SINCE")"

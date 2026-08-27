@@ -14,6 +14,12 @@ CONFIG_FILE="$PROJECT_DIR/config/dune-chat-monitor.env"
 # shellcheck disable=SC1090
 source "$CONFIG_FILE"
 
+# v0.2.5 uses UTC storage and the browser local timezone for display.
+if grep -q '^TIMEZONE=' "$CONFIG_FILE" 2>/dev/null; then
+  sed -i '/^TIMEZONE=/d' "$CONFIG_FILE"
+  echo "[OK] Removed obsolete TIMEZONE from local configuration."
+fi
+
 # v0.2.0 no longer uses a configured server display name.
 if grep -q '^SERVER_NAME=' "$CONFIG_FILE" 2>/dev/null; then
   sed -i '/^SERVER_NAME=/d' "$CONFIG_FILE"

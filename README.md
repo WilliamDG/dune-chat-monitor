@@ -88,13 +88,13 @@ Clone the repository, then:
 
 The installer:
 1. detects the RedBlink Dune installation;
-2. asks only for local runtime values such as timezone/retention;
+2. uses generic runtime defaults (`30` retention days, `50` messages per history page) without asking for server-specific values;
 3. installs/enables the Console UI addon;
 4. approves the read-only `players:read` addon permission for the manual/local install;
 5. installs a `dune-chat-monitor.service` systemd service;
 6. starts the collector.
 
-No server name is required.
+No server name or timezone is required. Chat timestamps are stored in UTC and displayed using the browser's local timezone. Runtime defaults can be changed later in `config/dune-chat-monitor.env`.
 
 ## Diagnose
 

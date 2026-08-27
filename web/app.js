@@ -69,16 +69,6 @@ function channelKey(value) {
   return normalizeChannel(value).toLowerCase();
 }
 
-function configuredTimezone() {
-  const timezone = normalizeText(state.status?.timezone);
-  if (!timezone) return undefined;
-  try {
-    new Intl.DateTimeFormat(undefined, { timeZone: timezone }).format(new Date());
-    return timezone;
-  } catch {
-    return undefined;
-  }
-}
 
 function parseMessageDate(message) {
   const value = message.gameTimestampUtc || message.gameTimestampLocal || message.receivedAt;
@@ -107,7 +97,6 @@ function prettyTime(message) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: configuredTimezone(),
   }).format(parsed);
 }
 
@@ -120,7 +109,6 @@ function prettyUpdateTime(value) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: configuredTimezone(),
   }).format(parsed);
 }
 
