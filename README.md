@@ -43,8 +43,9 @@ This avoids:
 The chat panel is intentionally compact and Console-like:
 - channel tabs for Map, Proximity, Guild, Faction, Party and Whispers, plus any additional channel types discovered at runtime, with total message counts;
 - sender search;
-- character name as the primary identity;
-- SteamID64 in parentheses when RedBlink exposes it;
+- character name as the primary identity; clicking a player name opens a compact action menu to copy SteamID, open the Steam profile, copy Funcom ID, or copy the player name;
+- whisper messages show the resolved recipient when RedBlink can map the destination identity;
+- Map messages show the map context when it is available from the chat payload/routing metadata, with a read-only player-map fallback for current players;
 - Funcom ID fallback when identity resolution is unavailable;
 - coordinates only when the message contains a meaningful non-zero origin;
 - a compact **Live** status badge without a permanent server-name header;
@@ -138,6 +139,7 @@ For each intercepted `TextChat` message, regardless of channel type, the collect
 - destination field;
 - message text;
 - game timestamp;
+- map metadata when present/recoverable from the chat payload or Text Router routing values;
 - coordinates when present;
 - spoofed-name metadata;
 - the decoded raw inner JSON.

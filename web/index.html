@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Dune Chat Monitor</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.2">
+  <link rel="stylesheet" href="./style.css?v=0.2.3">
 </head>
 <body>
   <main class="chat-page">
@@ -50,6 +50,15 @@
     <div id="historySentinel" class="history-sentinel" hidden></div>
   </main>
 
-  <script src="./app.js?v=0.2.2"></script>
+  <div id="playerActionMenu" class="player-action-menu" hidden role="menu" aria-label="Player actions">
+    <div id="playerActionTitle" class="player-action-title"></div>
+    <button type="button" data-player-action="copy-steam" role="menuitem">Copy SteamID</button>
+    <button type="button" data-player-action="open-steam" role="menuitem">View Steam profile</button>
+    <button type="button" data-player-action="copy-funcom" role="menuitem">Copy Funcom ID</button>
+    <button type="button" data-player-action="copy-name" role="menuitem">Copy player name</button>
+  </div>
+  <div id="actionToast" class="action-toast" hidden aria-live="polite"></div>
+
+  <script src="./app.js?v=0.2.3"></script>
 </body>
 </html>

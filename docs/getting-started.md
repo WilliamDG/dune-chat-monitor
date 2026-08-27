@@ -38,3 +38,5 @@ The collector stores every intercepted `TextChat` channel and exposes channel to
 Only the newest `CHAT_PAGE_SIZE` messages are exported in `messages.json`. Older retained messages are exported in fixed-size chunks under `web/live/history/`; the browser loads those chunks only as the user scrolls toward the end of the currently loaded list.
 
 Because Text Router can include private/direct channels, treat the addon's SQLite database and generated history exports as sensitive administrative data.
+
+The UI resolves sender and whisper-recipient aliases through RedBlink's read-only player API. Player names open an action menu for copying SteamID/Funcom ID/name or opening the public Steam profile. Map chat displays stored map metadata when available and otherwise uses the current read-only player map as a best-effort fallback.

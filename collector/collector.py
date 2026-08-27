@@ -86,6 +86,7 @@ def open_db() -> sqlite3.Connection:
             game_timestamp_utc TEXT,
             game_timestamp_local TEXT,
             channel TEXT NOT NULL,
+            map_name TEXT,
             funcom_id_from TEXT,
             username_to TEXT,
             message TEXT,
@@ -115,6 +116,28 @@ def open_db() -> sqlite3.Connection:
         );
         """
     )
+
+    # Schema migrations for existing addon databases.
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(messages)")}
+    if "map_name" not in columns:
+        conn.execute("ALTER TABLE messages ADD COLUMN map_name TEXT")
+
+    # Backfill map metadata for existing rows when it can be recovered from
+    # the preserved raw chat payload or Text Router source/target strings.
+    rows = conn.execute(
+        "SELECT id, raw_inner_json, interceptor_source, interceptor_target, map_name FROM messages"
+    ).fetchall()
+    for row in rows:
+        if str(row["map_name"] or "").strip():
+            continue
+        try:
+            inner = json.loads(row["raw_inner_json"] or "{}")
+        except Exception:
+            inner = {}
+        recovered = extract_map_name(inner, row["interceptor_source"], row["interceptor_target"])
+        if recovered:
+            conn.execute("UPDATE messages SET map_name = ? WHERE id = ?", (recovered, row["id"]))
+
     conn.commit()
     return conn
 
@@ -168,6 +191,7 @@ def message_payload(row: sqlite3.Row) -> dict[str, Any]:
         "gameTimestampUtc": row["game_timestamp_utc"],
         "gameTimestampLocal": row["game_timestamp_local"],
         "channel": row["channel"],
+        "mapName": row["map_name"],
         "from": row["funcom_id_from"],
         "to": row["username_to"],
         "message": row["message"],
@@ -194,6 +218,7 @@ def message_select_sql(where: str = "") -> str:
             game_timestamp_utc,
             game_timestamp_local,
             channel,
+            map_name,
             funcom_id_from,
             username_to,
             message,
@@ -394,6 +419,68 @@ def safe_preview(value: str | None, limit: int = 120) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+MAP_FIELD_CANDIDATES = (
+    "m_MapName",
+    "m_Map",
+    "m_WorldName",
+    "m_LevelName",
+    "m_OriginMapName",
+    "m_OriginMap",
+    "MapName",
+    "mapName",
+    "map",
+)
+
+MAP_ROUTE_RE = re.compile(
+    r"(?i)(DeepDesert_\d+|Survival_\d+|HaggaBasin(?:\.\d+)?|Social_\d+|Overmap(?:_\d+)?)"
+)
+
+
+def _map_candidate(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if isinstance(value, dict):
+        for key in ("Name", "name", "MapName", "mapName", "m_MapName", "Value", "value"):
+            candidate = _map_candidate(value.get(key))
+            if candidate:
+                return candidate
+    return None
+
+
+def extract_map_name(inner: dict[str, Any], source: Any = None, target: Any = None) -> str | None:
+    """Best-effort map extraction without querying the Dune database.
+
+    Current game builds may expose the map directly in the TextChat payload,
+    while others only reveal a map-shaped routing/source value. We preserve the
+    raw value and let the UI turn known internal map names into friendly labels.
+    """
+    for key in MAP_FIELD_CANDIDATES:
+        candidate = _map_candidate(inner.get(key))
+        if candidate:
+            return candidate
+
+    for container_key in ("m_Context", "m_Origin", "m_Source", "Context", "Origin", "Source"):
+        container = inner.get(container_key)
+        if isinstance(container, dict):
+            for key in MAP_FIELD_CANDIDATES:
+                candidate = _map_candidate(container.get(key))
+                if candidate:
+                    return candidate
+
+    for value in (source, target):
+        text = str(value or "").strip()
+        if not text:
+            continue
+        match = MAP_ROUTE_RE.search(text)
+        if match:
+            return match.group(1)
+
+    return None
+
+
 def decode_chat_line(line: str) -> dict[str, Any] | None:
     docker_ts = None
     m_ts = DOCKER_TS_RE.match(line)
@@ -458,6 +545,7 @@ def decode_chat_line(line: str) -> dict[str, Any] | None:
         "game_timestamp_utc": game_utc,
         "game_timestamp_local": game_local,
         "channel": str(channel),
+        "map_name": extract_map_name(inner, source, target),
         "funcom_id_from": inner.get("m_FuncomIdFrom"),
         "username_to": inner.get("m_UserNameTo"),
         "message": text,
@@ -483,6 +571,7 @@ def save_message(conn: sqlite3.Connection, message: dict[str, Any]) -> int | Non
             game_timestamp_utc,
             game_timestamp_local,
             channel,
+            map_name,
             funcom_id_from,
             username_to,
             message,
@@ -502,6 +591,7 @@ def save_message(conn: sqlite3.Connection, message: dict[str, Any]) -> int | Non
             :game_timestamp_utc,
             :game_timestamp_local,
             :channel,
+            :map_name,
             :funcom_id_from,
             :username_to,
             :message,

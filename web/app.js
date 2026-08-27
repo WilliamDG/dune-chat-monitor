@@ -18,6 +18,7 @@ const state = {
   status: null,
   selectedChannel: "",
   identities: new Map(),
+  identityAliases: new Map(),
   identityDirectoryLoadedAt: 0,
   identityRefreshPromise: null,
   identityProfileAttempts: new Map(),
@@ -27,6 +28,8 @@ const state = {
   historyLoading: false,
   historyError: "",
   lastHeadSignature: "",
+  playerMenuTarget: null,
+  toastTimer: null,
 };
 
 const els = {
@@ -40,6 +43,9 @@ const els = {
   lastUpdate: document.getElementById("lastUpdate"),
   messages: document.getElementById("messages"),
   historySentinel: document.getElementById("historySentinel"),
+  playerActionMenu: document.getElementById("playerActionMenu"),
+  playerActionTitle: document.getElementById("playerActionTitle"),
+  actionToast: document.getElementById("actionToast"),
 };
 
 function escapeHtml(value) {
@@ -219,43 +225,115 @@ function avatarLetter(value) {
   return text ? text.slice(0, 1).toUpperCase() : "?";
 }
 
+function identityKeyForAlias(value) {
+  const alias = normalizeText(value).toLowerCase();
+  if (!alias) return "";
+  if (state.identities.has(alias)) return alias;
+  return state.identityAliases.get(alias) || "";
+}
+
+function resolvedIdentity(value) {
+  const key = identityKeyForAlias(value);
+  return key ? state.identities.get(key) || null : null;
+}
+
 function identityFor(message) {
   const funcomId = normalizeText(message.from);
-  const resolved = funcomId ? state.identities.get(funcomId.toLowerCase()) : null;
+  const resolved = resolvedIdentity(funcomId);
   const spoofedName = message.spoofed ? normalizeText(message.spoofedUsername) : "";
 
   if (spoofedName) {
     return {
+      ...(resolved || {}),
       name: spoofedName,
-      steamId: "",
+      funcomId: funcomId || resolved?.funcomId || "",
+      steamId: resolved?.steamId || "",
       secondary: funcomId ? `Spoofed sender · ${funcomId}` : "Spoofed sender",
     };
   }
 
   if (resolved?.name) {
     return {
+      ...resolved,
       name: resolved.name,
+      funcomId: resolved.funcomId || funcomId,
       steamId: resolved.steamId || "",
-      secondary: resolved.steamId ? "" : funcomId,
+      secondary: resolved.funcomId ? "" : funcomId,
     };
   }
 
   return {
     name: funcomId || "Unknown player",
+    funcomId,
     steamId: "",
     secondary: "",
+    map: "",
   };
+}
+
+function recipientIdentityFor(message) {
+  const recipient = normalizeText(message.to);
+  if (!recipient) return null;
+  const resolved = resolvedIdentity(recipient);
+  if (resolved) {
+    return {
+      ...resolved,
+      name: resolved.name || recipient,
+      funcomId: resolved.funcomId || "",
+      steamId: resolved.steamId || "",
+      secondary: "",
+    };
+  }
+  return {
+    name: recipient,
+    funcomId: "",
+    steamId: "",
+    secondary: "",
+    map: "",
+  };
+}
+
+function friendlyMapName(value) {
+  const raw = normalizeText(value);
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (lower.includes("deepdesert")) return "Deep Desert";
+  if (lower.includes("survival_1") || lower.includes("haggabasin") || lower.includes("hagga basin")) return "Hagga Basin";
+  if (lower.includes("overmap")) return "Overmap";
+  return raw
+    .replace(/\.dim_?\d+$/i, "")
+    .replace(/\.\d+$/i, "")
+    .replace(/_+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function messageMapName(message, identity = identityFor(message)) {
+  return friendlyMapName(
+    message.mapName
+      || identity?.map
+      || identity?.partitionMap
+      || ""
+  );
 }
 
 function searchableText(message) {
   const identity = identityFor(message);
+  const recipient = recipientIdentityFor(message);
   return [
     message.from,
+    message.to,
     message.message,
     message.channel,
+    message.mapName,
+    messageMapName(message, identity),
     identity.name,
     identity.steamId,
+    identity.funcomId,
     identity.secondary,
+    recipient?.name,
+    recipient?.steamId,
+    recipient?.funcomId,
   ].join(" ").toLowerCase();
 }
 
@@ -274,6 +352,26 @@ function locationMarkup(origin) {
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
       X ${escapeHtml(formatCoordinate(origin?.x))} · Y ${escapeHtml(formatCoordinate(origin?.y))} · Z ${escapeHtml(formatCoordinate(origin?.z))}
     </span>`;
+}
+
+function playerButtonMarkup(identity, message, role = "sender") {
+  const name = normalizeText(identity?.name) || "Unknown player";
+  const messageId = normalizeText(message?.id);
+  return `<button class="player-name-button" type="button" data-player-role="${escapeHtml(role)}" data-message-id="${escapeHtml(messageId)}" aria-haspopup="menu" aria-expanded="false">${escapeHtml(name)}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></button>`;
+}
+
+function recipientMarkup(message) {
+  const key = channelKey(message.channel);
+  if (key !== "whispers" && key !== "whisper") return "";
+  const recipient = recipientIdentityFor(message);
+  if (!recipient) return "";
+  return `<div class="whisper-recipient"><span class="whisper-arrow" aria-hidden="true">→</span><span class="whisper-to-label">To</span>${playerButtonMarkup(recipient, message, "recipient")}</div>`;
+}
+
+function mapMarkup(message, identity) {
+  if (channelKey(message.channel) !== "map") return "";
+  const mapName = messageMapName(message, identity);
+  return mapName ? `<span class="map-context" title="Map where the message was sent">${escapeHtml(mapName)}</span>` : "";
 }
 
 function totalStoredMessages() {
@@ -349,13 +447,14 @@ function render() {
 
   els.messages.innerHTML = filtered.map((message) => {
     const identity = identityFor(message);
-    const steamId = identity.steamId
-      ? `<span class="steam-id">(${escapeHtml(identity.steamId)})</span>`
-      : "";
     const secondary = identity.secondary
       ? `<div class="sender-secondary">${escapeHtml(identity.secondary)}</div>`
       : "";
-    const footerParts = locationMarkup(message.origin);
+    const footerParts = [
+      locationMarkup(message.origin),
+      mapMarkup(message, identity),
+    ].filter(Boolean).join("");
+    const recipient = recipientMarkup(message);
 
     return `
       <article class="message-card ${channelTone(message.channel)}">
@@ -369,10 +468,10 @@ function render() {
             <span class="avatar" aria-hidden="true">${escapeHtml(avatarLetter(identity.name))}</span>
             <div class="identity">
               <div class="sender-line">
-                <span class="sender-name">${escapeHtml(identity.name)}</span>
-                ${steamId}
+                ${playerButtonMarkup(identity, message, "sender")}
               </div>
               ${secondary}
+              ${recipient}
             </div>
           </div>
 
@@ -471,18 +570,69 @@ function playerField(row, ...keys) {
   return "";
 }
 
-function upsertDirectoryIdentity(row) {
-  const funcomId = playerField(row, "funcom_id", "funcomId");
-  if (!funcomId) return;
+function identityAliasesFromRow(row) {
+  return [
+    playerField(row, "funcom_id", "funcomId"),
+    playerField(row, "fls_id", "flsId"),
+    playerField(row, "action_player_id", "actionPlayerId", "player_id", "playerId"),
+    playerField(row, "account_id", "accountId"),
+    playerField(row, "actor_id", "actorId", "player_pawn_id", "playerPawnId"),
+    playerField(row, "player_controller_id", "playerControllerId", "controller_id", "controllerId"),
+    playerField(row, "character_name", "characterName", "name"),
+    playerField(row, "platform_id", "platformId"),
+  ].map(normalizeText).filter(Boolean);
+}
+
+function registerIdentityAliases(key, aliases) {
+  for (const alias of aliases) {
+    const normalized = normalizeText(alias).toLowerCase();
+    if (normalized) state.identityAliases.set(normalized, key);
+  }
+}
+
+function upsertIdentity(row, fallback = {}) {
+  const funcomId = playerField(row, "funcom_id", "funcomId") || fallback.funcomId || "";
+  if (!funcomId) return null;
 
   const key = funcomId.toLowerCase();
-  const previous = state.identities.get(key) || {};
-  state.identities.set(key, {
+  const previous = state.identities.get(key) || fallback || {};
+  const platformName = playerField(row, "platform_name", "platformName").toLowerCase();
+  const platformId = playerField(row, "platform_id", "platformId");
+  const steamId = (!platformName || platformName === "steam") && /^\d{17}$/.test(platformId) ? platformId : "";
+
+  const identity = {
     ...previous,
     funcomId,
     name: playerField(row, "character_name", "characterName", "name") || previous.name || "",
+    steamId: steamId || previous.steamId || "",
     actorId: playerField(row, "actor_id", "actorId", "player_pawn_id", "playerPawnId") || previous.actorId || "",
-  });
+    flsId: playerField(row, "fls_id", "flsId") || previous.flsId || "",
+    accountId: playerField(row, "account_id", "accountId") || previous.accountId || "",
+    actionPlayerId: playerField(row, "action_player_id", "actionPlayerId", "player_id", "playerId") || previous.actionPlayerId || "",
+    controllerId: playerField(row, "player_controller_id", "playerControllerId", "controller_id", "controllerId") || previous.controllerId || "",
+    map: playerField(row, "map", "player_map", "playerMap") || previous.map || "",
+    partitionMap: playerField(row, "partition_map", "partitionMap") || previous.partitionMap || "",
+    partitionId: playerField(row, "partition_id", "partitionId") || previous.partitionId || "",
+    dimensionIndex: playerField(row, "dimension_index", "dimensionIndex") || previous.dimensionIndex || "",
+  };
+
+  state.identities.set(key, identity);
+  registerIdentityAliases(key, [
+    ...identityAliasesFromRow(row),
+    identity.funcomId,
+    identity.name,
+    identity.steamId,
+    identity.flsId,
+    identity.accountId,
+    identity.actionPlayerId,
+    identity.actorId,
+    identity.controllerId,
+  ]);
+  return identity;
+}
+
+function upsertDirectoryIdentity(row) {
+  upsertIdentity(row);
 }
 
 async function loadPlayerDirectory() {
@@ -512,22 +662,7 @@ async function enrichIdentityProfile(identity) {
   if (!identity?.actorId) return;
   const payload = await fetchJson(`/api/players/${encodeURIComponent(identity.actorId)}`);
   const player = profilePlayer(payload);
-  const funcomId = playerField(player, "funcom_id", "funcomId") || identity.funcomId;
-  if (!funcomId) return;
-
-  const platformName = playerField(player, "platform_name", "platformName").toLowerCase();
-  const platformId = playerField(player, "platform_id", "platformId");
-  const steamId = (!platformName || platformName === "steam") && /^\d{17}$/.test(platformId) ? platformId : "";
-  const key = funcomId.toLowerCase();
-  const previous = state.identities.get(key) || identity;
-
-  state.identities.set(key, {
-    ...previous,
-    funcomId,
-    name: playerField(player, "character_name", "characterName", "name") || previous.name || "",
-    steamId: steamId || previous.steamId || "",
-    actorId: playerField(player, "actor_id", "actorId", "player_pawn_id", "playerPawnId") || previous.actorId || "",
-  });
+  upsertIdentity(player, identity);
 }
 
 async function runBatched(items, worker, concurrency = PROFILE_CONCURRENCY) {
@@ -550,9 +685,11 @@ async function refreshPlayerIdentities(force = false) {
       }
 
       const now = Date.now();
-      const senders = [...new Set(state.messages.map((message) => normalizeText(message.from).toLowerCase()).filter(Boolean))];
-      const identities = senders
-        .map((sender) => state.identities.get(sender))
+      const aliases = [...new Set(state.messages.flatMap((message) => [message.from, message.to]).map((value) => normalizeText(value).toLowerCase()).filter(Boolean))];
+      const identities = [...new Map(aliases
+        .map((alias) => resolvedIdentity(alias))
+        .filter(Boolean)
+        .map((identity) => [normalizeText(identity.funcomId).toLowerCase(), identity])).values()]
         .filter((identity) => {
           if (!identity?.actorId || identity.steamId) return false;
           const key = normalizeText(identity.funcomId).toLowerCase();
@@ -576,6 +713,113 @@ async function refreshPlayerIdentities(force = false) {
   })();
 
   return state.identityRefreshPromise;
+}
+
+function messageById(id) {
+  const wanted = normalizeText(id);
+  return state.messages.find((message) => normalizeText(message?.id) === wanted) || null;
+}
+
+function playerTargetFor(message, role) {
+  if (!message) return null;
+  return role === "recipient" ? recipientIdentityFor(message) : identityFor(message);
+}
+
+function showActionToast(text) {
+  if (!els.actionToast) return;
+  clearTimeout(state.toastTimer);
+  els.actionToast.textContent = text;
+  els.actionToast.hidden = false;
+  state.toastTimer = setTimeout(() => {
+    els.actionToast.hidden = true;
+  }, 1800);
+}
+
+async function copyText(value, label) {
+  const text = normalizeText(value);
+  if (!text) {
+    showActionToast(`${label} unavailable`);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+  showActionToast(`${label} copied`);
+}
+
+function closePlayerMenu() {
+  if (!els.playerActionMenu || els.playerActionMenu.hidden) return;
+  const previousAnchor = state.playerMenuTarget?.anchor;
+  if (previousAnchor?.isConnected) previousAnchor.setAttribute("aria-expanded", "false");
+  els.playerActionMenu.hidden = true;
+  state.playerMenuTarget = null;
+}
+
+function positionPlayerMenu(anchor) {
+  if (!anchor || !els.playerActionMenu) return;
+  const rect = anchor.getBoundingClientRect();
+  const menu = els.playerActionMenu;
+  const margin = 10;
+  const width = menu.offsetWidth || 220;
+  const height = menu.offsetHeight || 190;
+  let left = rect.left;
+  let top = rect.bottom + 7;
+  if (left + width > window.innerWidth - margin) left = window.innerWidth - width - margin;
+  if (left < margin) left = margin;
+  if (top + height > window.innerHeight - margin) top = Math.max(margin, rect.top - height - 7);
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+}
+
+function openPlayerMenu(anchor, target) {
+  if (!els.playerActionMenu || !target) return;
+  closePlayerMenu();
+
+  const steamId = /^\d{17}$/.test(normalizeText(target.steamId)) ? normalizeText(target.steamId) : "";
+  const funcomId = normalizeText(target.funcomId);
+  const name = normalizeText(target.name) || "Unknown player";
+  state.playerMenuTarget = { anchor, target: { ...target, name, steamId, funcomId } };
+
+  els.playerActionTitle.textContent = name;
+  for (const button of els.playerActionMenu.querySelectorAll("[data-player-action]")) {
+    const action = button.dataset.playerAction;
+    button.disabled = (action === "copy-steam" || action === "open-steam") ? !steamId
+      : action === "copy-funcom" ? !funcomId
+      : action === "copy-name" ? !name
+      : false;
+  }
+
+  anchor.setAttribute("aria-expanded", "true");
+  els.playerActionMenu.hidden = false;
+  positionPlayerMenu(anchor);
+}
+
+async function handlePlayerAction(action) {
+  const target = state.playerMenuTarget?.target;
+  if (!target) return;
+  if (action === "copy-steam") {
+    await copyText(target.steamId, "SteamID");
+  } else if (action === "open-steam") {
+    if (/^\d{17}$/.test(target.steamId)) {
+      const popup = window.open(`https://steamcommunity.com/profiles/${encodeURIComponent(target.steamId)}`, "_blank", "noopener,noreferrer");
+      if (popup) popup.opener = null;
+    }
+  } else if (action === "copy-funcom") {
+    await copyText(target.funcomId, "Funcom ID");
+  } else if (action === "copy-name") {
+    await copyText(target.name, "Player name");
+  }
+  closePlayerMenu();
 }
 
 function headSignature(status, payload, history) {
@@ -618,6 +862,46 @@ async function refresh({ forceIdentities = false } = {}) {
     els.refreshButton.classList.remove("is-busy");
   }
 }
+
+els.messages.addEventListener("click", (event) => {
+  const button = event.target.closest(".player-name-button[data-message-id][data-player-role]");
+  if (!button) return;
+  event.stopPropagation();
+  const message = messageById(button.dataset.messageId);
+  const target = playerTargetFor(message, button.dataset.playerRole || "sender");
+  if (!target) return;
+
+  if (state.playerMenuTarget?.anchor === button && !els.playerActionMenu.hidden) {
+    closePlayerMenu();
+    return;
+  }
+  openPlayerMenu(button, target);
+});
+
+els.playerActionMenu.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-player-action]");
+  if (!button || button.disabled) return;
+  void handlePlayerAction(button.dataset.playerAction || "");
+});
+
+document.addEventListener("click", (event) => {
+  if (els.playerActionMenu.hidden) return;
+  if (els.playerActionMenu.contains(event.target)) return;
+  if (event.target.closest?.(".player-name-button")) return;
+  closePlayerMenu();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closePlayerMenu();
+});
+
+window.addEventListener("resize", () => {
+  if (state.playerMenuTarget?.anchor && !els.playerActionMenu.hidden) positionPlayerMenu(state.playerMenuTarget.anchor);
+});
+
+window.addEventListener("scroll", () => {
+  if (state.playerMenuTarget?.anchor && !els.playerActionMenu.hidden) positionPlayerMenu(state.playerMenuTarget.anchor);
+}, true);
 
 els.channelTabs.addEventListener("click", (event) => {
   const button = event.target.closest("[data-channel]");

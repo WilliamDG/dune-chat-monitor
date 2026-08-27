@@ -4,13 +4,15 @@
   "name": "Dune Chat Monitor",
   "description": "Read-only web monitor for Dune: Awakening self-hosted server chat.",
   "author": "WilliamDG",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "ui",
   "entry": {
     "navigation": "Chat Monitor",
     "path": "web/index.html"
   },
   "permissions": {
-    "players": ["read"]
+    "players": [
+      "read"
+    ]
   }
 }
