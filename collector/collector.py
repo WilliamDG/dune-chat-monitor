@@ -890,8 +890,7 @@ def stream_logs(conn: sqlite3.Connection) -> None:
             "[CHAT] "
             f"channel={message['channel']} "
             f"from={message['funcom_id_from'] or '-'} "
-            f"id={message['message_id']} "
-            f"text={safe_preview(message['message'])}",
+            f"id={message['message_id']}",
             flush=True,
         )
 
