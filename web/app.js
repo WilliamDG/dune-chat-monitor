@@ -305,6 +305,15 @@ function messageMapName(message, identity = identityFor(message)) {
   );
 }
 
+function messageMapContextLabel(message, identity = identityFor(message)) {
+  const mapName = messageMapName(message, identity);
+  const sietchName = normalizeText(message.sietchName);
+  if (mapName && sietchName && mapName.toLowerCase() === "hagga basin") {
+    return `${mapName} - ${sietchName}`;
+  }
+  return mapName;
+}
+
 function searchableText(message) {
   const identity = identityFor(message);
   const recipient = recipientIdentityFor(message);
@@ -314,7 +323,10 @@ function searchableText(message) {
     message.message,
     message.channel,
     message.mapName,
-    messageMapName(message, identity),
+    message.routingKey,
+    message.mapDimension,
+    message.sietchName,
+    messageMapContextLabel(message, identity),
     identity.name,
     identity.steamId,
     identity.funcomId,
@@ -359,9 +371,9 @@ function recipientMarkup(message) {
 function channelBadgeMarkup(message, identity) {
   const channel = normalizeChannel(message.channel) || "Unknown";
   if (channelKey(channel) === "map") {
-    const mapName = messageMapName(message, identity);
-    if (mapName) {
-      return `<span class="channel-badge" title="Map where the message was sent"><span class="channel-label">${escapeHtml(channel)}</span><span class="channel-separator"> - </span><span class="channel-map-name">${escapeHtml(mapName)}</span></span>`;
+    const contextLabel = messageMapContextLabel(message, identity);
+    if (contextLabel) {
+      return `<span class="channel-badge" title="Map and Sietch where the message was sent"><span class="channel-map-name">${escapeHtml(contextLabel)}</span></span>`;
     }
   }
   return `<span class="channel-badge"><span class="channel-label">${escapeHtml(channel)}</span></span>`;

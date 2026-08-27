@@ -32,6 +32,12 @@ else
   bad "Dune installation not found from configuration"
 fi
 
+if [[ -n "${DUNE_ROOT:-}" && -x "$DUNE_ROOT/runtime/scripts/dune" ]]; then
+  ok "RedBlink Dune CLI available for Sietch labels"
+else
+  warn "RedBlink Dune CLI not found; Map chat will fall back to map-only labels"
+fi
+
 if [[ -n "${TEXT_ROUTER_CONTAINER:-}" ]] \
   && docker inspect "$TEXT_ROUTER_CONTAINER" >/dev/null 2>&1; then
   if [[ "$(docker inspect -f '{{.State.Running}}' "$TEXT_ROUTER_CONTAINER" 2>/dev/null)" == "true" ]]; then

@@ -8,7 +8,7 @@ A read-only chat monitor addon for the RedBlink Dune: Awakening self-hosted Dock
 
 Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts structured `TextChat` messages, stores them in its **own SQLite database**, and exposes a lightweight chat UI inside Dune Docker Console. All Text Router chat channel types are retained and the UI creates channel tabs dynamically as channels appear.
 
-The collector does **not** consume RabbitMQ queues and does **not** connect to or write to the Dune PostgreSQL database.
+The collector does **not** consume RabbitMQ queues and does **not** connect to or write to the Dune PostgreSQL database. For Hagga Basin Map chat only, it uses RedBlink's existing read-only `sietches dimensions` CLI command to translate a routed dimension such as `HaggaBasin.0` into the configured Sietch display name; the result is cached and stored with the chat message.
 
 For display-only player identity enrichment, the web UI requests RedBlink's existing read-only player API (`players:read`) so a Funcom chat identity can be shown as the in-game character name and, when available, SteamID64. The addon performs no SQL and stores no Dune database credentials.
 
@@ -45,7 +45,7 @@ The chat panel is intentionally compact and Console-like:
 - sender search;
 - character name as the primary identity; clicking a player name opens a compact action menu to copy SteamID, open the Steam profile, copy Funcom ID, or copy the player name;
 - whisper messages show the resolved recipient when RedBlink can map the destination identity;
-- Map messages show the map context inline with the channel badge (for example `MAP - Hagga Basin`) when it is available from chat metadata, with a read-only player-map fallback for current players;
+- Map messages use Text Router routing metadata to preserve the message dimension; Hagga Basin chat is shown as `Hagga Basin - <Sietch display name>` when RedBlink can resolve that active dimension (for example `Hagga Basin - Sietch Abbir`), with map-only fallback when the Sietch label is unavailable;
 - Funcom ID fallback when identity resolution is unavailable;
 - coordinates only when the message contains a meaningful non-zero origin;
 - a compact **Live** status badge without a permanent server-name header;
@@ -140,6 +140,8 @@ For each intercepted `TextChat` message, regardless of channel type, the collect
 - message text;
 - game timestamp;
 - map metadata when present/recoverable from the chat payload or Text Router routing values;
+- Map routing key and dimension when Text Router exposes them;
+- the Hagga Basin Sietch display name resolved through RedBlink's read-only `runtime/scripts/dune sietches dimensions Survival_1 --active-only --labels` command;
 - coordinates when present;
 - spoofed-name metadata;
 - the decoded raw inner JSON.

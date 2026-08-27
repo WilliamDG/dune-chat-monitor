@@ -21,6 +21,11 @@ BOOTSTRAP_SINCE = os.environ.get("CHAT_BOOTSTRAP_SINCE", "1h").strip() or "1h"
 TEXT_ROUTER_CONTAINER = os.environ.get("TEXT_ROUTER_CONTAINER", "dune-text-router")
 DOCKER_BIN = os.environ.get("DOCKER_BIN", "/usr/bin/docker")
 
+DUNE_ROOT_VALUE = os.environ.get("DUNE_ROOT", "").strip()
+DUNE_ROOT = Path(DUNE_ROOT_VALUE).expanduser() if DUNE_ROOT_VALUE else None
+DUNE_CLI = (DUNE_ROOT / "runtime" / "scripts" / "dune") if DUNE_ROOT else None
+SIETCH_CACHE_TTL_SECONDS = 5 * 60
+
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = Path(os.environ.get("DB_PATH", str(PROJECT_DIR / "data" / "chat.sqlite3")))
 EXPORT_DIR = Path(os.environ.get("EXPORT_DIR", str(PROJECT_DIR / "web" / "live")))
@@ -28,6 +33,11 @@ EXPORT_DIR = Path(os.environ.get("EXPORT_DIR", str(PROJECT_DIR / "web" / "live")
 CLOG_RE = re.compile(
     r"\[\d{2}:\d{2}:\d{2}\s+\d+\s+INF\s+CLOG\]\s+"
     r"Intercepted message from (.+?) to (.+?):\s+(\{.*\})\s*$"
+)
+
+ROUTED_CLOG_RE = re.compile(
+    r"\[\d{2}:\d{2}:\d{2}\s+\d+\s+INF\s+CLOG\]\s+"
+    r"Redirected message from (.+?) to (.+?) using routing key ([^:]+):\s+(\{.*\})\s*$"
 )
 
 DOCKER_TS_RE = re.compile(
@@ -77,6 +87,9 @@ def open_db() -> sqlite3.Connection:
             game_timestamp_local TEXT,
             channel TEXT NOT NULL,
             map_name TEXT,
+            routing_key TEXT,
+            map_dimension INTEGER,
+            sietch_name TEXT,
             funcom_id_from TEXT,
             username_to TEXT,
             message TEXT,
@@ -111,6 +124,12 @@ def open_db() -> sqlite3.Connection:
     columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(messages)")}
     if "map_name" not in columns:
         conn.execute("ALTER TABLE messages ADD COLUMN map_name TEXT")
+    if "routing_key" not in columns:
+        conn.execute("ALTER TABLE messages ADD COLUMN routing_key TEXT")
+    if "map_dimension" not in columns:
+        conn.execute("ALTER TABLE messages ADD COLUMN map_dimension INTEGER")
+    if "sietch_name" not in columns:
+        conn.execute("ALTER TABLE messages ADD COLUMN sietch_name TEXT")
 
     # Backfill map metadata for existing rows when it can be recovered from
     # the preserved raw chat payload or Text Router source/target strings.
@@ -182,6 +201,9 @@ def message_payload(row: sqlite3.Row) -> dict[str, Any]:
         "gameTimestampLocal": row["game_timestamp_local"],
         "channel": row["channel"],
         "mapName": row["map_name"],
+        "routingKey": row["routing_key"],
+        "mapDimension": row["map_dimension"],
+        "sietchName": row["sietch_name"],
         "from": row["funcom_id_from"],
         "to": row["username_to"],
         "message": row["message"],
@@ -209,6 +231,9 @@ def message_select_sql(where: str = "") -> str:
             game_timestamp_local,
             channel,
             map_name,
+            routing_key,
+            map_dimension,
+            sietch_name,
             funcom_id_from,
             username_to,
             message,
@@ -467,19 +492,89 @@ def extract_map_name(inner: dict[str, Any], source: Any = None, target: Any = No
     return None
 
 
-def decode_chat_line(line: str) -> dict[str, Any] | None:
-    docker_ts = None
-    m_ts = DOCKER_TS_RE.match(line)
-    if m_ts:
-        docker_ts = m_ts.group("ts")
-        line = m_ts.group("line")
+ROUTING_MAP_RE = re.compile(
+    r"(?i)^(?P<map>HaggaBasin|Survival_\d+|DeepDesert_\d+|Social_\d+|Overmap(?:_\d+)?)"
+    r"(?:\.(?:dim_?)?(?P<dimension>\d+))?$"
+)
 
-    match = CLOG_RE.search(line)
+_sietch_label_cache: dict[str, tuple[float, dict[int, str]]] = {}
+
+
+def route_map_context(routing_key: str | None) -> tuple[str | None, int | None]:
+    raw = str(routing_key or "").strip()
+    if not raw:
+        return None, None
+    match = ROUTING_MAP_RE.match(raw)
     if not match:
+        return None, None
+    map_name = match.group("map")
+    dimension_raw = match.group("dimension")
+    dimension = int(dimension_raw) if dimension_raw is not None else None
+    return map_name, dimension
+
+
+def sietch_dimension_labels(map_name: str = "Survival_1") -> dict[int, str]:
+    """Resolve active Sietch display names through RedBlink's own read-only CLI.
+
+    The collector never opens the Dune database directly. The CLI command is
+    cached so Map chat does not invoke it for every message.
+    """
+    now = time.monotonic()
+    cached = _sietch_label_cache.get(map_name)
+    if cached and now - cached[0] < SIETCH_CACHE_TTL_SECONDS:
+        return dict(cached[1])
+
+    if DUNE_ROOT is None or DUNE_CLI is None or not DUNE_CLI.is_file():
+        return dict(cached[1]) if cached else {}
+
+    try:
+        output = subprocess.check_output(
+            [
+                str(DUNE_CLI),
+                "sietches",
+                "dimensions",
+                map_name,
+                "--active-only",
+                "--labels",
+            ],
+            cwd=str(DUNE_ROOT),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stderr=subprocess.DEVNULL,
+            timeout=8,
+        )
+    except Exception:
+        # Keep a previous good cache on transient CLI/DB availability issues.
+        return dict(cached[1]) if cached else {}
+
+    labels: dict[int, str] = {}
+    pattern = re.compile(
+        rf"^{re.escape(map_name)}\s+Dimension\s+(\d+)\s+"
+        r"Display Name:\s*(.*?)\s+Password:\s*.*$",
+        re.IGNORECASE,
+    )
+    for raw_line in output.splitlines():
+        match = pattern.match(raw_line.strip())
+        if not match:
+            continue
+        display_name = match.group(2).strip()
+        if display_name:
+            labels[int(match.group(1))] = display_name
+
+    _sietch_label_cache[map_name] = (now, labels)
+    return dict(labels)
+
+
+def sietch_name_for_route(map_name: str | None, dimension: int | None) -> str | None:
+    if dimension is None or not map_name:
         return None
+    if map_name.lower() not in {"haggabasin", "survival_1"}:
+        return None
+    return sietch_dimension_labels("Survival_1").get(dimension)
 
-    source, target, outer_text = match.groups()
 
+def decode_outer_text_chat(outer_text: str) -> tuple[str, dict[str, Any]] | None:
     try:
         outer = json.loads(outer_text)
     except json.JSONDecodeError:
@@ -502,6 +597,89 @@ def decode_chat_line(line: str) -> dict[str, Any] | None:
         inner = inner_value
     else:
         return None
+
+    return str(outer_type), inner
+
+
+def decode_routed_chat_line(line: str) -> dict[str, Any] | None:
+    m_ts = DOCKER_TS_RE.match(line)
+    if m_ts:
+        line = m_ts.group("line")
+
+    match = ROUTED_CLOG_RE.search(line)
+    if not match:
+        return None
+
+    source, exchange, routing_key, outer_text = match.groups()
+    decoded = decode_outer_text_chat(outer_text)
+    if not decoded:
+        return None
+    _, inner = decoded
+
+    message_id = inner.get("m_Id")
+    channel = str(inner.get("m_ChannelType") or "")
+    if not message_id or channel.lower() != "map":
+        return None
+
+    map_name, dimension = route_map_context(routing_key)
+    return {
+        "message_id": str(message_id),
+        "channel": channel,
+        "routing_key": routing_key.strip(),
+        "map_name": map_name,
+        "map_dimension": dimension,
+        "sietch_name": sietch_name_for_route(map_name, dimension),
+        "route_source": source,
+        "route_exchange": exchange,
+    }
+
+
+def apply_routed_context(conn: sqlite3.Connection, routed: dict[str, Any]) -> int | None:
+    row = conn.execute(
+        "SELECT id FROM messages WHERE message_id = ?",
+        (routed["message_id"],),
+    ).fetchone()
+    if not row:
+        return None
+
+    conn.execute(
+        """
+        UPDATE messages
+        SET routing_key = ?,
+            map_name = COALESCE(?, map_name),
+            map_dimension = COALESCE(?, map_dimension),
+            sietch_name = COALESCE(?, sietch_name)
+        WHERE message_id = ?
+        """,
+        (
+            routed.get("routing_key"),
+            routed.get("map_name"),
+            routed.get("map_dimension"),
+            routed.get("sietch_name"),
+            routed["message_id"],
+        ),
+    )
+    conn.commit()
+    return int(row["id"])
+
+
+def decode_chat_line(line: str) -> dict[str, Any] | None:
+    docker_ts = None
+    m_ts = DOCKER_TS_RE.match(line)
+    if m_ts:
+        docker_ts = m_ts.group("ts")
+        line = m_ts.group("line")
+
+    match = CLOG_RE.search(line)
+    if not match:
+        return None
+
+    source, target, outer_text = match.groups()
+
+    decoded = decode_outer_text_chat(outer_text)
+    if not decoded:
+        return None
+    outer_type, inner = decoded
 
     message_id = inner.get("m_Id")
     channel = inner.get("m_ChannelType")
@@ -532,6 +710,9 @@ def decode_chat_line(line: str) -> dict[str, Any] | None:
         "game_timestamp_local": game_local,
         "channel": str(channel),
         "map_name": extract_map_name(inner, source, target),
+        "routing_key": None,
+        "map_dimension": None,
+        "sietch_name": None,
         "funcom_id_from": inner.get("m_FuncomIdFrom"),
         "username_to": inner.get("m_UserNameTo"),
         "message": text,
@@ -558,6 +739,9 @@ def save_message(conn: sqlite3.Connection, message: dict[str, Any]) -> int | Non
             game_timestamp_local,
             channel,
             map_name,
+            routing_key,
+            map_dimension,
+            sietch_name,
             funcom_id_from,
             username_to,
             message,
@@ -578,6 +762,9 @@ def save_message(conn: sqlite3.Connection, message: dict[str, Any]) -> int | Non
             :game_timestamp_local,
             :channel,
             :map_name,
+            :routing_key,
+            :map_dimension,
+            :sietch_name,
             :funcom_id_from,
             :username_to,
             :message,
@@ -663,6 +850,27 @@ def stream_logs(conn: sqlite3.Connection) -> None:
 
         ts_match = DOCKER_TS_RE.match(raw_line)
         docker_ts = ts_match.group("ts") if ts_match else None
+
+        routed = decode_routed_chat_line(raw_line)
+        if routed:
+            if docker_ts:
+                set_state(conn, "last_docker_timestamp", docker_ts)
+            routed_id = apply_routed_context(conn, routed)
+            if routed_id is not None:
+                context = routed.get("sietch_name") or routed.get("routing_key") or "-"
+                print(
+                    "[ROUTE] "
+                    f"channel={routed['channel']} "
+                    f"id={routed['message_id']} "
+                    f"context={safe_preview(str(context), 80)}",
+                    flush=True,
+                )
+                export_messages(
+                    conn,
+                    connected=True,
+                    history_bucket=history_bucket_number(routed_id),
+                )
+            continue
 
         message = decode_chat_line(raw_line)
         if not message:

@@ -6,7 +6,7 @@ Addon code stays in this repository. The Community Index points server owners to
 
 1. Remove the private RedBlink local-development compatibility workaround from the test server, or confirm it is no longer needed.
 2. Verify the addon works with only the permissions declared in `addon.json`.
-3. Confirm the collector still has no RabbitMQ consumer and no direct Dune DB credentials/SQL.
+3. Confirm the collector still has no RabbitMQ consumer and no direct Dune DB credentials/SQL. Hagga Basin Sietch labels must be resolved only through RedBlink's read-only `runtime/scripts/dune sietches dimensions Survival_1 --active-only --labels` command.
 4. Verify the release documentation clearly states that all intercepted `TextChat` channels, including private/direct channels when exposed by Text Router, are retained as sensitive admin data.
 5. Validate and package:
 
@@ -19,11 +19,11 @@ bash scripts/package.sh
 
 ## Release
 
-For version `0.2.5`:
+For version `0.2.6`:
 
 ```bash
-git tag v0.2.5
-git push origin v0.2.5
+git tag v0.2.6
+git push origin v0.2.6
 ```
 
 GitHub Actions should publish the package and checksum.
