@@ -45,7 +45,7 @@ The chat panel is intentionally compact and Console-like:
 - sender search;
 - character name as the primary identity; clicking a player name opens a compact action menu to copy SteamID, open the Steam profile, copy Funcom ID, or copy the player name;
 - whisper messages show the resolved recipient when RedBlink can map the destination identity;
-- Map messages show the map context when it is available from the chat payload/routing metadata, with a read-only player-map fallback for current players;
+- Map messages show the map context inline with the channel badge (for example `MAP - Hagga Basin`) when it is available from chat metadata, with a read-only player-map fallback for current players;
 - Funcom ID fallback when identity resolution is unavailable;
 - coordinates only when the message contains a meaningful non-zero origin;
 - a compact **Live** status badge without a permanent server-name header;

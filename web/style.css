@@ -321,7 +321,21 @@ button {
   font-weight: 800;
   letter-spacing: .075em;
   line-height: 1;
+}
+
+.channel-label {
   text-transform: uppercase;
+}
+
+.channel-separator {
+  opacity: .65;
+  margin: 0 2px;
+}
+
+.channel-map-name {
+  text-transform: none;
+  letter-spacing: .02em;
+  font-weight: 750;
 }
 
 .tone-map .channel-badge {
@@ -596,19 +610,6 @@ button {
 
 .whisper-to-label {
   color: #756d64;
-}
-
-.map-context {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  padding: 2px 7px;
-  border: 1px solid rgba(210, 167, 96, .24);
-  border-radius: 6px;
-  background: rgba(210, 167, 96, .045);
-  color: #a99168;
-  font-weight: 650;
-  letter-spacing: .02em;
 }
 
 .player-action-menu {

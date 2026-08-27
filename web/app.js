@@ -368,10 +368,15 @@ function recipientMarkup(message) {
   return `<div class="whisper-recipient"><span class="whisper-arrow" aria-hidden="true">→</span><span class="whisper-to-label">To</span>${playerButtonMarkup(recipient, message, "recipient")}</div>`;
 }
 
-function mapMarkup(message, identity) {
-  if (channelKey(message.channel) !== "map") return "";
-  const mapName = messageMapName(message, identity);
-  return mapName ? `<span class="map-context" title="Map where the message was sent">${escapeHtml(mapName)}</span>` : "";
+function channelBadgeMarkup(message, identity) {
+  const channel = normalizeChannel(message.channel) || "Unknown";
+  if (channelKey(channel) === "map") {
+    const mapName = messageMapName(message, identity);
+    if (mapName) {
+      return `<span class="channel-badge" title="Map where the message was sent"><span class="channel-label">${escapeHtml(channel)}</span><span class="channel-separator"> - </span><span class="channel-map-name">${escapeHtml(mapName)}</span></span>`;
+    }
+  }
+  return `<span class="channel-badge"><span class="channel-label">${escapeHtml(channel)}</span></span>`;
 }
 
 function totalStoredMessages() {
@@ -452,7 +457,6 @@ function render() {
       : "";
     const footerParts = [
       locationMarkup(message.origin),
-      mapMarkup(message, identity),
     ].filter(Boolean).join("");
     const recipient = recipientMarkup(message);
 
@@ -460,7 +464,7 @@ function render() {
       <article class="message-card ${channelTone(message.channel)}">
         <div class="message-content">
           <div class="message-topline">
-            <span class="channel-badge">${escapeHtml(message.channel || "Unknown")}</span>
+            ${channelBadgeMarkup(message, identity)}
             <time class="message-time">${escapeHtml(prettyTime(message))}</time>
           </div>
 

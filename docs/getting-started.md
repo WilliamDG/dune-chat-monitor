@@ -39,4 +39,4 @@ Only the newest `CHAT_PAGE_SIZE` messages are exported in `messages.json`. Older
 
 Because Text Router can include private/direct channels, treat the addon's SQLite database and generated history exports as sensitive administrative data.
 
-The UI resolves sender and whisper-recipient aliases through RedBlink's read-only player API. Player names open an action menu for copying SteamID/Funcom ID/name or opening the public Steam profile. Map chat displays stored map metadata when available and otherwise uses the current read-only player map as a best-effort fallback.
+The UI resolves sender and whisper-recipient aliases through RedBlink's read-only player API. Player names open an action menu for copying SteamID/Funcom ID/name or opening the public Steam profile. Map chat displays the map inline with the channel badge (for example `MAP - Hagga Basin`) when stored map metadata is available and otherwise uses the current read-only player map as a best-effort fallback.
