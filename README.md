@@ -58,18 +58,18 @@ Recommended installation path:
 
 ```text
 /opt/dune-chat-monitor/
-â”œâ”€â”€ collector/
-â”œâ”€â”€ config/
-â”‚   â””â”€â”€ dune-chat-monitor.env
-â”œâ”€â”€ data/
-â”‚   â””â”€â”€ chat.sqlite3
-â”œâ”€â”€ logs/
-â”œâ”€â”€ web/
-â”œâ”€â”€ addon.json
-â”œâ”€â”€ install.sh
-â”œâ”€â”€ doctor.sh
-â”œâ”€â”€ update.sh
-â””â”€â”€ uninstall.sh
+|-- collector/
+|-- config/
+|   `-- dune-chat-monitor.env
+|-- data/
+|   `-- chat.sqlite3
+|-- logs/
+|-- web/
+|-- addon.json
+|-- install.sh
+|-- doctor.sh
+|-- update.sh
+`-- uninstall.sh
 ```
 
 The RedBlink Console receives only the installed addon copy under:
