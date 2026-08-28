@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "dune-chat-monitor",
   "name": "Dune Chat Monitor",
-  "description": "Read-only web monitor for Dune: Awakening self-hosted server chat; private/direct chat, including Whispers, may be retained for up to 30 days by default.",
+  "description": "Read-only web monitor for Dune: Awakening self-hosted server chat. Private/direct Whispers are explicitly excluded from collection and storage.",
   "author": "WilliamDG",
   "version": "0.2.7",
   "type": "ui",

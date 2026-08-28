@@ -6,7 +6,7 @@ A read-only chat monitor addon for the RedBlink Dune: Awakening self-hosted Dock
 
 ## What it does
 
-Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts structured `TextChat` messages, stores them in its **own SQLite database**, and exposes a lightweight chat UI inside Dune Docker Console. All Text Router chat channel types are retained and the UI creates channel tabs dynamically as channels appear.
+Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts structured `TextChat` messages, stores allowed server-chat channels in its **own SQLite database**, and exposes a lightweight chat UI inside Dune Docker Console. Private/direct **Whispers are explicitly excluded before persistence**, while the UI creates tabs dynamically for the remaining channels as they appear.
 
 The collector does **not** consume RabbitMQ queues and does **not** connect to or write to the Dune PostgreSQL database. For Hagga Basin Map chat only, it uses RedBlink's existing read-only `sietches dimensions` CLI command to translate a routed dimension such as `HaggaBasin.0` into the configured Sietch display name; the result is cached and stored with the chat message.
 
@@ -41,10 +41,9 @@ This avoids:
 ## UI
 
 The chat panel is intentionally compact and Console-like:
-- channel tabs for Map, Proximity, Guild, Faction, Party and Whispers, plus any additional channel types discovered at runtime, with total message counts;
+- channel tabs for Map, Proximity, Guild, Faction and Party, plus any additional non-Whisper channel types discovered at runtime, with total message counts;
 - sender search;
 - Funcom chat identity is always available; character-name and SteamID enrichment is best-effort through the permission bridge. Clicking the displayed identity opens a compact action menu; Steam actions are disabled when the bridge does not provide a SteamID;
-- whisper messages show the resolved recipient when RedBlink can map the destination identity;
 - Map messages use Text Router routing metadata to preserve the message dimension; Hagga Basin chat is shown as `Hagga Basin - <Sietch display name>` when RedBlink can resolve that active dimension (for example `Hagga Basin - Sietch Abbir`), with map-only fallback when the Sietch label is unavailable;
 - Funcom ID fallback when identity resolution is unavailable;
 - coordinates only when the message contains a meaningful non-zero origin;
@@ -152,7 +151,7 @@ Character names and SteamID64 values are **not copied into the addon SQLite data
 
 ## Chat retention and privacy
 
-The Text Router may expose multiple channel types, including private/direct chat such as **Whispers**. Dune Chat Monitor stores **all intercepted `TextChat` channels**, including private/direct chat when exposed by Text Router, in its own SQLite database. With the default configuration, those messages may be retained for **up to 30 days** (`CHAT_RETENTION_DAYS=30`). Server owners should treat `data/chat.sqlite3` and the generated `web/live/` history files as sensitive administrative data and restrict access accordingly.
+The Text Router may expose private/direct chat such as **Whispers**. Dune Chat Monitor explicitly excludes `Whisper` / `Whispers` channel records **before persistence**, so they are not stored in the addon SQLite database and are not exported to `web/live/`. When upgrading from a release that previously retained Whispers, the collector deletes those legacy rows from its own SQLite database and rebuilds history exports. The configured `CHAT_RETENTION_DAYS` applies only to the remaining allowed chat channels. Server owners should still treat `data/chat.sqlite3` and generated history files as administrative data and restrict access accordingly.
 
 The addon still never writes to Dune game data, never consumes Dune queues, and never copies resolved character names or SteamID64 values into its SQLite database.
 

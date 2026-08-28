@@ -7,8 +7,12 @@ const CHANNEL_PRIORITY = [
   "Guild",
   "Faction",
   "Party",
-  "Whispers",
 ];
+
+// Defense in depth: the collector is the primary privacy boundary, but the UI
+// also rejects legacy/stale private-channel payloads that may already be open
+// in a browser tab while the addon is upgraded.
+const EXCLUDED_CHANNEL_KEYS = new Set(["whisper", "whispers"]);
 
 const state = {
   messages: [],
@@ -65,6 +69,10 @@ function channelKey(value) {
   return normalizeChannel(value).toLowerCase();
 }
 
+function isExcludedChannel(value) {
+  return EXCLUDED_CHANNEL_KEYS.has(channelKey(value));
+}
+
 
 function parseMessageDate(message) {
   const value = message.gameTimestampUtc || message.gameTimestampLocal || message.receivedAt;
@@ -112,7 +120,6 @@ function channelTone(channel) {
   const key = channelKey(channel);
   if (key === "map") return "tone-map";
   if (key === "proximity") return "tone-proximity";
-  if (key === "whispers" || key === "whisper") return "tone-whispers";
   if (key === "sietch") return "tone-sietch";
   if (key === "party" || key === "group") return "tone-party";
   if (key === "guild") return "tone-guild";
@@ -132,7 +139,7 @@ function globalChannelCounts() {
 
   for (const row of Array.isArray(state.status?.channels) ? state.status.channels : []) {
     const name = normalizeChannel(row?.name);
-    if (!name) continue;
+    if (!name || isExcludedChannel(name)) continue;
     const key = channelKey(name);
     names.set(key, name);
     counts.set(key, Number(row?.count) || 0);
@@ -140,7 +147,7 @@ function globalChannelCounts() {
 
   for (const message of state.messages) {
     const name = normalizeChannel(message.channel);
-    if (!name) continue;
+    if (!name || isExcludedChannel(name)) continue;
     const key = channelKey(name);
     if (!names.has(key)) names.set(key, name);
     if (!counts.has(key)) counts.set(key, 0);
@@ -255,28 +262,6 @@ function identityFor(message) {
   };
 }
 
-function recipientIdentityFor(message) {
-  const recipient = normalizeText(message.to);
-  if (!recipient) return null;
-  const resolved = resolvedIdentity(recipient);
-  if (resolved) {
-    return {
-      ...resolved,
-      name: resolved.name || recipient,
-      funcomId: resolved.funcomId || "",
-      steamId: resolved.steamId || "",
-      secondary: "",
-    };
-  }
-  return {
-    name: recipient,
-    funcomId: "",
-    steamId: "",
-    secondary: "",
-    map: "",
-  };
-}
-
 function friendlyMapName(value) {
   const raw = normalizeText(value);
   if (!raw) return "";
@@ -312,10 +297,8 @@ function messageMapContextLabel(message, identity = identityFor(message)) {
 
 function searchableText(message) {
   const identity = identityFor(message);
-  const recipient = recipientIdentityFor(message);
   return [
     message.from,
-    message.to,
     message.message,
     message.channel,
     message.mapName,
@@ -327,15 +310,13 @@ function searchableText(message) {
     identity.steamId,
     identity.funcomId,
     identity.secondary,
-    recipient?.name,
-    recipient?.steamId,
-    recipient?.funcomId,
   ].join(" ").toLowerCase();
 }
 
 function filteredMessages() {
   const query = els.searchInput.value.trim().toLowerCase();
   return state.messages.filter((message) => {
+    if (isExcludedChannel(message.channel)) return false;
     if (state.selectedChannel && channelKey(message.channel) !== channelKey(state.selectedChannel)) return false;
     return !query || searchableText(message).includes(query);
   });
@@ -354,14 +335,6 @@ function playerButtonMarkup(identity, message, role = "sender") {
   const name = normalizeText(identity?.name) || "Unknown player";
   const messageId = normalizeText(message?.id);
   return `<button class="player-name-button" type="button" data-player-role="${escapeHtml(role)}" data-message-id="${escapeHtml(messageId)}" aria-haspopup="menu" aria-expanded="false">${escapeHtml(name)}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></button>`;
-}
-
-function recipientMarkup(message) {
-  const key = channelKey(message.channel);
-  if (key !== "whispers" && key !== "whisper") return "";
-  const recipient = recipientIdentityFor(message);
-  if (!recipient) return "";
-  return `<div class="whisper-recipient"><span class="whisper-arrow" aria-hidden="true">→</span><span class="whisper-to-label">To</span>${playerButtonMarkup(recipient, message, "recipient")}</div>`;
 }
 
 function channelBadgeMarkup(message, identity) {
@@ -454,7 +427,6 @@ function render() {
     const footerParts = [
       locationMarkup(message.origin),
     ].filter(Boolean).join("");
-    const recipient = recipientMarkup(message);
 
     return `
       <article class="message-card ${channelTone(message.channel)}">
@@ -471,7 +443,6 @@ function render() {
                 ${playerButtonMarkup(identity, message, "sender")}
               </div>
               ${secondary}
-              ${recipient}
             </div>
           </div>
 
@@ -501,12 +472,17 @@ function messageKey(message) {
 }
 
 function mergeMessages(incoming) {
-  const byKey = new Map(state.messages.map((message) => [messageKey(message), message]));
+  const byKey = new Map(
+    state.messages
+      .filter((message) => !isExcludedChannel(message.channel))
+      .map((message) => [messageKey(message), message])
+  );
   let added = 0;
 
   for (const raw of Array.isArray(incoming) ? incoming : []) {
     if (!raw || typeof raw !== "object") continue;
     const message = { ...raw, channel: normalizeChannel(raw.channel) || "Unknown" };
+    if (isExcludedChannel(message.channel)) continue;
     const key = messageKey(message);
     if (!byKey.has(key)) added += 1;
     byKey.set(key, message);
@@ -696,9 +672,9 @@ function messageById(id) {
   return state.messages.find((message) => normalizeText(message?.id) === wanted) || null;
 }
 
-function playerTargetFor(message, role) {
+function playerTargetFor(message) {
   if (!message) return null;
-  return role === "recipient" ? recipientIdentityFor(message) : identityFor(message);
+  return identityFor(message);
 }
 
 function showActionToast(text) {

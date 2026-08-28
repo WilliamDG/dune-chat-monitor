@@ -53,6 +53,13 @@ INTERNAL_UI_NOTIFICATION_PREFIXES = (
     "ui/guildnotification_",
 )
 
+# Private/direct Whispers are intentionally excluded from collection. They may
+# appear in Text Router logs, but the addon must not persist or export them.
+EXCLUDED_PRIVATE_CHANNELS = frozenset((
+    "whisper",
+    "whispers",
+))
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -158,6 +165,13 @@ def open_db() -> sqlite3.Connection:
     if removed_internal:
         print(
             f"[CLEANUP] removed {removed_internal} internal UI notification row(s)",
+            flush=True,
+        )
+
+    removed_private = purge_excluded_private_chat(conn)
+    if removed_private:
+        print(
+            f"[CLEANUP] removed {removed_private} excluded private Whisper row(s)",
             flush=True,
         )
 
@@ -622,6 +636,24 @@ def purge_internal_ui_notifications(conn: sqlite3.Connection) -> int:
     return max(0, int(cur.rowcount or 0))
 
 
+def is_excluded_private_channel(channel: Any) -> bool:
+    return str(channel or "").strip().casefold() in EXCLUDED_PRIVATE_CHANNELS
+
+
+def purge_excluded_private_chat(conn: sqlite3.Connection) -> int:
+    # Older releases retained Whisper/private-direct chat. Remove those rows
+    # from the addon's private SQLite database before rebuilding any exports.
+    # This never touches the Dune PostgreSQL database.
+    cur = conn.execute(
+        """
+        DELETE FROM messages
+        WHERE lower(trim(coalesce(channel, ''))) IN ('whisper', 'whispers')
+        """
+    )
+    conn.commit()
+    return max(0, int(cur.rowcount or 0))
+
+
 def decode_outer_text_chat(outer_text: str) -> tuple[str, dict[str, Any]] | None:
     try:
         outer = json.loads(outer_text)
@@ -733,6 +765,15 @@ def decode_chat_line(line: str) -> dict[str, Any] | None:
     channel = inner.get("m_ChannelType")
     if not message_id or not channel:
         return None
+
+    # Do not inspect, persist, export, or render private/direct Whispers. Return
+    # a discard marker so stream_logs can still advance its Docker timestamp.
+    if is_excluded_private_channel(channel):
+        return {
+            "_discard": True,
+            "message_id": str(message_id),
+            "channel": str(channel),
+        }
 
     message_obj = inner.get("m_Message") or {}
     text = message_obj.get("m_UnlocalizedMessage")
@@ -929,6 +970,9 @@ def stream_logs(conn: sqlite3.Connection) -> None:
 
         if docker_ts:
             set_state(conn, "last_docker_timestamp", docker_ts)
+
+        if message.get("_discard"):
+            continue
 
         inserted_id = save_message(conn, message)
 

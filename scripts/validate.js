@@ -122,6 +122,28 @@ function validateReviewSecurityBoundaries() {
   }
 }
 
+function validateWhisperPrivacyBoundary(manifest) {
+  const collectorPath = path.join(repoRoot, "collector", "collector.py");
+  const appPath = path.join(repoRoot, "web", "app.js");
+  const collector = fs.readFileSync(collectorPath, "utf8");
+  const app = fs.readFileSync(appPath, "utf8");
+
+  if (!collector.includes("EXCLUDED_PRIVATE_CHANNELS") ||
+      !collector.includes("purge_excluded_private_chat") ||
+      !collector.includes('"whisper"') ||
+      !collector.includes('"whispers"')) {
+    fail("collector must exclude and purge private/direct Whisper channels before persistence/export.");
+  }
+
+  if (/tone-whispers|whisper-recipient|["']Whispers["']/.test(app)) {
+    fail("web/app.js must not expose a Whispers channel/tab or Whisper-recipient UI.");
+  }
+
+  if (!/Whispers are explicitly excluded/i.test(manifest.description)) {
+    fail("addon description must state that private/direct Whispers are excluded from collection/storage.");
+  }
+}
+
 function main() {
   const manifest = readManifest();
 
@@ -146,6 +168,7 @@ function main() {
   validateEntry(manifest);
   validatePermissions(manifest);
   validateReviewSecurityBoundaries();
+  validateWhisperPrivacyBoundary(manifest);
 
   console.log(`Addon manifest is valid: ${manifest.id} ${manifest.version}`);
 }
