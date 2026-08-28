@@ -57,6 +57,32 @@ find "$PROJECT_DIR/web" \
   ! -name live \
   -exec cp -a {} "$INSTALL_DIR/web/" \;
 
+# The Console/browser can keep static addon assets cached even when files on
+# disk have changed. Rewrite the deployed asset query strings on every update
+# so UI fixes are loaded immediately after the addon page is reloaded.
+UI_CACHE_BUST="$(date +%s)"
+DEPLOYED_INDEX="$INSTALL_DIR/web/index.html"
+if [[ -f "$DEPLOYED_INDEX" ]]; then
+  python3 - "$DEPLOYED_INDEX" "$UI_CACHE_BUST" <<'PY_CACHE_BUST'
+import re
+import sys
+from pathlib import Path
+
+index_path = Path(sys.argv[1])
+token = sys.argv[2]
+text = index_path.read_text(encoding="utf-8")
+
+for asset in ("style.css", "dune-addon-bridge.js", "app.js"):
+    pattern = rf'(\./{re.escape(asset)})(?:\?v=[^"\']*)?'
+    text, count = re.subn(pattern, lambda match: f"{match.group(1)}?v={token}", text)
+    if count != 1:
+        raise SystemExit(f"[ERROR] Expected exactly one {asset} reference in {index_path}, found {count}")
+
+index_path.write_text(text, encoding="utf-8")
+PY_CACHE_BUST
+  echo "[OK] UI cache-bust token: $UI_CACHE_BUST"
+fi
+
 # Permission approval is intentionally left to Dune Docker Console.
 # Do not edit RedBlink addon state from the addon updater.
 
