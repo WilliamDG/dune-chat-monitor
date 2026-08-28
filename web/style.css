@@ -527,6 +527,119 @@ button {
   animation: spin .8s linear infinite;
 }
 
+
+.player-name-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: .94rem;
+  font-weight: 750;
+  line-height: 1.25;
+  text-align: left;
+  transition: color .15s ease;
+}
+
+.player-name-button:hover,
+.player-name-button[aria-expanded="true"] {
+  color: #e0b86f;
+}
+
+.player-name-button svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .62;
+  transition: transform .15s ease, opacity .15s ease;
+}
+
+.player-name-button[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+
+.player-action-menu {
+  position: fixed;
+  z-index: 10000;
+  width: 220px;
+  padding: 6px;
+  border: 1px solid #443a30;
+  border-radius: 10px;
+  background: rgba(22, 19, 16, .99);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .42);
+  backdrop-filter: blur(12px);
+}
+
+.player-action-menu[hidden] {
+  display: none;
+}
+
+.player-action-title {
+  padding: 8px 9px 7px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 4px;
+  color: #d8cbbb;
+  font-size: .76rem;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-action-menu button {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #bfb4a7;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 650;
+  text-align: left;
+  transition: background .12s ease, color .12s ease;
+}
+
+.player-action-menu button:hover:not(:disabled) {
+  background: rgba(210, 167, 96, .09);
+  color: #e2d6c7;
+}
+
+.player-action-menu button:disabled {
+  color: #5e5750;
+  cursor: not-allowed;
+}
+
+.action-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10001;
+  max-width: min(320px, calc(100vw - 36px));
+  padding: 9px 12px;
+  border: 1px solid rgba(210, 167, 96, .34);
+  border-radius: 9px;
+  background: rgba(27, 24, 20, .98);
+  color: #d7c9b8;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .35);
+  font-size: .76rem;
+  font-weight: 650;
+}
+
+.action-toast[hidden] {
+  display: none;
+}
 @media (max-width: 760px) {
   .chat-page {
     padding: 12px;
