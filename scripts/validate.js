@@ -101,6 +101,27 @@ function validatePermissions(manifest) {
   }
 }
 
+function validateReviewSecurityBoundaries() {
+  const appPath = path.join(repoRoot, "web", "app.js");
+  const installPath = path.join(repoRoot, "install.sh");
+  const updatePath = path.join(repoRoot, "update.sh");
+
+  const app = fs.readFileSync(appPath, "utf8");
+  if (/\/api\/players(?:\/|\?|[`'\"])/.test(app)) {
+    fail("web/app.js must not call Console player REST endpoints directly; use DuneAddon.request(...).");
+  }
+  if (!app.includes('DuneAddon.request("leadership.players.list"')) {
+    fail("web/app.js must request player identity data through the addon permission bridge.");
+  }
+
+  for (const scriptPath of [installPath, updatePath]) {
+    const script = fs.readFileSync(scriptPath, "utf8");
+    if (/approvedPermissions/.test(script) || /runtime[\\/]addons[\\/]state\.json/.test(script)) {
+      fail(`${path.basename(scriptPath)} must not approve addon permissions by editing addon state directly.`);
+    }
+  }
+}
+
 function main() {
   const manifest = readManifest();
 
@@ -124,6 +145,7 @@ function main() {
 
   validateEntry(manifest);
   validatePermissions(manifest);
+  validateReviewSecurityBoundaries();
 
   console.log(`Addon manifest is valid: ${manifest.id} ${manifest.version}`);
 }

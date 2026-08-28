@@ -1,7 +1,4 @@
 const IDENTITY_REFRESH_MS = 5 * 60 * 1000;
-const PROFILE_CONCURRENCY = 6;
-const MAX_PLAYER_PAGES = 10;
-const PLAYER_PAGE_SIZE = 200;
 const REFRESH_MS = 1500;
 
 const CHANNEL_PRIORITY = [
@@ -21,7 +18,6 @@ const state = {
   identityAliases: new Map(),
   identityDirectoryLoadedAt: 0,
   identityRefreshPromise: null,
-  identityProfileAttempts: new Map(),
   refreshing: false,
   historyBuckets: [],
   loadedHistoryBuckets: new Set(),
@@ -596,9 +592,24 @@ function registerIdentityAliases(key, aliases) {
 
 function upsertIdentity(row, fallback = {}) {
   const funcomId = playerField(row, "funcom_id", "funcomId") || fallback.funcomId || "";
-  if (!funcomId) return null;
+  const name = playerField(row, "character_name", "characterName", "name") || fallback.name || "";
+  const actorId = playerField(row, "actor_id", "actorId", "player_pawn_id", "playerPawnId") || fallback.actorId || "";
+  const controllerId = playerField(row, "player_controller_id", "playerControllerId", "controller_id", "controllerId") || fallback.controllerId || "";
+  const accountId = playerField(row, "account_id", "accountId") || fallback.accountId || "";
+  const keySeed = funcomId
+    ? `funcom:${funcomId}`
+    : actorId
+      ? `actor:${actorId}`
+      : controllerId
+        ? `controller:${controllerId}`
+        : accountId
+          ? `account:${accountId}`
+          : name
+            ? `name:${name}`
+            : "";
+  if (!keySeed) return null;
 
-  const key = funcomId.toLowerCase();
+  const key = keySeed.toLowerCase();
   const previous = state.identities.get(key) || fallback || {};
   const platformName = playerField(row, "platform_name", "platformName").toLowerCase();
   const platformId = playerField(row, "platform_id", "platformId");
@@ -607,13 +618,13 @@ function upsertIdentity(row, fallback = {}) {
   const identity = {
     ...previous,
     funcomId,
-    name: playerField(row, "character_name", "characterName", "name") || previous.name || "",
+    name,
     steamId: steamId || previous.steamId || "",
-    actorId: playerField(row, "actor_id", "actorId", "player_pawn_id", "playerPawnId") || previous.actorId || "",
+    actorId,
     flsId: playerField(row, "fls_id", "flsId") || previous.flsId || "",
-    accountId: playerField(row, "account_id", "accountId") || previous.accountId || "",
+    accountId,
     actionPlayerId: playerField(row, "action_player_id", "actionPlayerId", "player_id", "playerId") || previous.actionPlayerId || "",
-    controllerId: playerField(row, "player_controller_id", "playerControllerId", "controller_id", "controllerId") || previous.controllerId || "",
+    controllerId,
     map: playerField(row, "map", "player_map", "playerMap") || previous.map || "",
     partitionMap: playerField(row, "partition_map", "partitionMap") || previous.partitionMap || "",
     partitionId: playerField(row, "partition_id", "partitionId") || previous.partitionId || "",
@@ -640,40 +651,21 @@ function upsertDirectoryIdentity(row) {
 }
 
 async function loadPlayerDirectory() {
-  let page = 0;
-  let loaded = 0;
-
-  while (page < MAX_PLAYER_PAGES) {
-    const payload = await fetchJson(`/api/players?page=${page}&pageSize=${PLAYER_PAGE_SIZE}&sortColumn=character_name&sortDirection=asc`);
-    const rows = rowsFromPlayerPayload(payload);
-    rows.forEach(upsertDirectoryIdentity);
-    loaded += rows.length;
-
-    const total = Number(payload?.totalCount ?? payload?.totalPlayers ?? payload?.result?.totalCount);
-    if (!rows.length || rows.length < PLAYER_PAGE_SIZE || (Number.isFinite(total) && loaded >= total)) break;
-    page += 1;
+  if (!window.DuneAddon || typeof window.DuneAddon.request !== "function") {
+    throw new Error("Dune Console addon permission bridge is unavailable.");
   }
-}
 
-function profilePlayer(payload) {
-  if (payload?.player && typeof payload.player === "object") return payload.player;
-  if (payload?.profile?.player && typeof payload.profile.player === "object") return payload.profile.player;
-  if (payload?.profile && typeof payload.profile === "object") return payload.profile;
-  return payload && typeof payload === "object" ? payload : {};
-}
+  // Never call Console player REST endpoints directly from the iframe. The
+  // bridge enforces the players:read permission declared by addon.json.
+  const payload = await window.DuneAddon.request("leadership.players.list", {});
+  const rows = rowsFromPlayerPayload(payload);
+  rows.forEach(upsertDirectoryIdentity);
 
-async function enrichIdentityProfile(identity) {
-  if (!identity?.actorId) return;
-  const payload = await fetchJson(`/api/players/${encodeURIComponent(identity.actorId)}`);
-  const player = profilePlayer(payload);
-  upsertIdentity(player, identity);
-}
-
-async function runBatched(items, worker, concurrency = PROFILE_CONCURRENCY) {
-  for (let index = 0; index < items.length; index += concurrency) {
-    const batch = items.slice(index, index + concurrency);
-    await Promise.allSettled(batch.map(worker));
-  }
+  // leadership.players.list intentionally exposes a reduced player shape on
+  // current Console releases. If it does not include a Funcom/platform key,
+  // chat remains fully usable with its native Funcom-ID fallback; Steam/name
+  // enrichment simply stays unavailable rather than bypassing the bridge.
+  return rows.length;
 }
 
 async function refreshPlayerIdentities(force = false) {
@@ -686,30 +678,10 @@ async function refreshPlayerIdentities(force = false) {
       if (directoryStale) {
         await loadPlayerDirectory();
         state.identityDirectoryLoadedAt = Date.now();
+        render();
       }
-
-      const now = Date.now();
-      const aliases = [...new Set(state.messages.flatMap((message) => [message.from, message.to]).map((value) => normalizeText(value).toLowerCase()).filter(Boolean))];
-      const identities = [...new Map(aliases
-        .map((alias) => resolvedIdentity(alias))
-        .filter(Boolean)
-        .map((identity) => [normalizeText(identity.funcomId).toLowerCase(), identity])).values()]
-        .filter((identity) => {
-          if (!identity?.actorId || identity.steamId) return false;
-          const key = normalizeText(identity.funcomId).toLowerCase();
-          const lastAttempt = state.identityProfileAttempts.get(key) || 0;
-          return force || now - lastAttempt >= IDENTITY_REFRESH_MS;
-        });
-
-      for (const identity of identities) {
-        const key = normalizeText(identity.funcomId).toLowerCase();
-        if (key) state.identityProfileAttempts.set(key, now);
-      }
-
-      await runBatched(identities, enrichIdentityProfile);
-      render();
     } catch (error) {
-      console.debug("Dune Chat Monitor: player identity enrichment unavailable", error);
+      console.debug("Dune Chat Monitor: bridge player identity enrichment unavailable", error);
       state.identityDirectoryLoadedAt = Date.now();
     } finally {
       state.identityRefreshPromise = null;

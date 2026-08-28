@@ -74,7 +74,6 @@ detect_dune_root() {
   return 1
 }
 
-
 YES=0
 for arg in "$@"; do
   case "$arg" in
@@ -160,40 +159,9 @@ cp -a "$PROJECT_DIR/addon.json" "$INSTALL_DIR/"
 cp -a "$PROJECT_DIR/web" "$INSTALL_DIR/"
 mkdir -p "$ADDON_LIVE_DIR"
 
-python3 - "$DUNE_ROOT" "$ADDON_ID" <<'PY'
-import json
-import sys
-from pathlib import Path
+ok "Addon UI files installed"
+say "Permission approval is managed by Dune Docker Console; approve players:read there when prompted."
 
-root = Path(sys.argv[1])
-addon_id = sys.argv[2]
-state_path = root / "runtime" / "addons" / "state.json"
-state_path.parent.mkdir(parents=True, exist_ok=True)
-
-try:
-    state = json.loads(state_path.read_text(encoding="utf-8"))
-    if not isinstance(state, dict):
-        state = {}
-except Exception:
-    state = {}
-
-previous = state.get(addon_id, {})
-if not isinstance(previous, dict):
-    previous = {}
-
-state[addon_id] = {
-    **previous,
-    "enabled": True,
-    "approvedPermissions": ["players:read"]
-}
-
-state_path.write_text(
-    json.dumps(state, indent=2, ensure_ascii=False) + "\n",
-    encoding="utf-8"
-)
-PY
-
-ok "Addon UI installed and enabled"
 
 SERVICE_USER="$(stat -c '%U' "$PROJECT_DIR")"
 SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
@@ -244,9 +212,9 @@ fi
 
 say
 say "Installation completed."
-say "Refresh Dune Docker Console and open Addons -> Dune Chat Monitor."
+say "Refresh Dune Docker Console, open Addons -> Dune Chat Monitor, and approve players:read if prompted."
 say
 say "Collector source: $TEXT_ROUTER_CONTAINER Docker logs"
 say "RabbitMQ changes: none"
 say "Collector Dune database access: none"
-say "UI player identity source: RedBlink read-only player API (players:read)"
+say "UI player identity source: RedBlink addon permission bridge (players:read)"

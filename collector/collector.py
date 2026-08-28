@@ -46,6 +46,13 @@ DOCKER_TS_RE = re.compile(
 
 GAME_TS_FORMAT = "%Y.%m.%d-%H.%M.%S"
 
+# Internal localization/UI notifications can be emitted through Text Router as
+# TextChat records even though they are not player chat. Keep these out of the
+# monitor so they do not appear as fake Guild messages or inflate counters.
+INTERNAL_UI_NOTIFICATION_PREFIXES = (
+    "ui/guildnotification_",
+)
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -146,6 +153,13 @@ def open_db() -> sqlite3.Connection:
         recovered = extract_map_name(inner, row["interceptor_source"], row["interceptor_target"])
         if recovered:
             conn.execute("UPDATE messages SET map_name = ? WHERE id = ?", (recovered, row["id"]))
+
+    removed_internal = purge_internal_ui_notifications(conn)
+    if removed_internal:
+        print(
+            f"[CLEANUP] removed {removed_internal} internal UI notification row(s)",
+            flush=True,
+        )
 
     conn.commit()
     return conn
@@ -574,6 +588,40 @@ def sietch_name_for_route(map_name: str | None, dimension: int | None) -> str | 
     return sietch_dimension_labels("Survival_1").get(dimension)
 
 
+def is_internal_ui_notification(
+    inner: dict[str, Any],
+    message_text: Any,
+    spoofed_name: Any,
+) -> bool:
+    candidates = (
+        inner.get("m_FuncomIdFrom"),
+        message_text,
+        spoofed_name,
+    )
+    for candidate in candidates:
+        value = str(candidate or "").strip().casefold()
+        if any(value.startswith(prefix) for prefix in INTERNAL_UI_NOTIFICATION_PREFIXES):
+            return True
+    return False
+
+
+def purge_internal_ui_notifications(conn: sqlite3.Connection) -> int:
+    # v0.2.6 could persist Guild UI localization events such as
+    # UI/GuildNotification_Guild_Title. Purge only this known internal family
+    # from the addon's private SQLite database; the Dune database is untouched.
+    cur = conn.execute(
+        """
+        DELETE FROM messages
+        WHERE instr(lower(coalesce(funcom_id_from, '')), 'ui/guildnotification_') = 1
+           OR instr(lower(coalesce(spoofed_username, '')), 'ui/guildnotification_') = 1
+           OR instr(lower(coalesce(message, '')), 'ui/guildnotification_') = 1
+           OR instr(lower(coalesce(raw_inner_json, '')), 'ui/guildnotification_') > 0
+        """
+    )
+    conn.commit()
+    return max(0, int(cur.rowcount or 0))
+
+
 def decode_outer_text_chat(outer_text: str) -> tuple[str, dict[str, Any]] | None:
     try:
         outer = json.loads(outer_text)
@@ -698,6 +746,9 @@ def decode_chat_line(line: str) -> dict[str, Any] | None:
         or spoofed_obj.get("m_Key")
         or None
     )
+
+    if is_internal_ui_notification(inner, text, spoofed_name):
+        return None
 
     origin = inner.get("m_OriginLocation") or {}
     game_utc, game_local = parse_game_timestamp(inner.get("m_Timestamp"))

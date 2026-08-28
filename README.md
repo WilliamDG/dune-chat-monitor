@@ -10,7 +10,7 @@ Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts 
 
 The collector does **not** consume RabbitMQ queues and does **not** connect to or write to the Dune PostgreSQL database. For Hagga Basin Map chat only, it uses RedBlink's existing read-only `sietches dimensions` CLI command to translate a routed dimension such as `HaggaBasin.0` into the configured Sietch display name; the result is cached and stored with the chat message.
 
-For display-only player identity enrichment, the web UI requests RedBlink's existing read-only player API (`players:read`) so a Funcom chat identity can be shown as the in-game character name and, when available, SteamID64. The addon performs no SQL and stores no Dune database credentials.
+For display-only player identity enrichment, the web UI uses RedBlink's addon permission bridge via `DuneAddon.request("leadership.players.list")`. The Console enforces the declared `players:read` permission. The UI never calls Console player REST endpoints directly. When the bridge does not expose a stable Funcom/platform mapping, the monitor falls back to the Funcom identity already present in chat instead of bypassing the bridge. The addon performs no SQL and stores no Dune database credentials.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ collector/collector.py
                          v
                  RedBlink Console iframe
                          |
-                         +--> read-only player identity lookup (players:read)
+                         +--> DuneAddon permission bridge (players:read)
 ```
 
 This avoids:
@@ -43,7 +43,7 @@ This avoids:
 The chat panel is intentionally compact and Console-like:
 - channel tabs for Map, Proximity, Guild, Faction, Party and Whispers, plus any additional channel types discovered at runtime, with total message counts;
 - sender search;
-- character name as the primary identity; clicking a player name opens a compact action menu to copy SteamID, open the Steam profile, copy Funcom ID, or copy the player name;
+- Funcom chat identity is always available; character-name and SteamID enrichment is best-effort through the permission bridge. Clicking the displayed identity opens a compact action menu; Steam actions are disabled when the bridge does not provide a SteamID;
 - whisper messages show the resolved recipient when RedBlink can map the destination identity;
 - Map messages use Text Router routing metadata to preserve the message dimension; Hagga Basin chat is shown as `Hagga Basin - <Sietch display name>` when RedBlink can resolve that active dimension (for example `Hagga Basin - Sietch Abbir`), with map-only fallback when the Sietch label is unavailable;
 - Funcom ID fallback when identity resolution is unavailable;
@@ -89,8 +89,8 @@ Clone the repository, then:
 The installer:
 1. detects the RedBlink Dune installation;
 2. uses generic runtime defaults (`30` retention days, `50` messages per history page) without asking for server-specific values;
-3. installs/enables the Console UI addon;
-4. approves the read-only `players:read` addon permission for the manual/local install;
+3. installs the Console UI addon files;
+4. leaves addon enablement and `players:read` approval to Dune Docker Console / the administrator;
 5. installs a `dune-chat-monitor.service` systemd service;
 6. starts the collector.
 
@@ -132,7 +132,7 @@ Remove both data and local configuration:
 
 ## Stored chat fields
 
-For each intercepted `TextChat` message, regardless of channel type, the collector stores:
+For each intercepted player `TextChat` message, regardless of channel type, the collector stores the fields below. Internal UI localization notifications such as `UI/GuildNotification_*` are filtered and are not treated as player chat:
 - message ID;
 - channel type;
 - Funcom ID of the sender;
@@ -148,11 +148,11 @@ For each intercepted `TextChat` message, regardless of channel type, the collect
 
 Messages are deduplicated by the game's `m_Id`.
 
-Character names and SteamID64 values are **not copied into the addon SQLite database**. They are resolved by the web UI from RedBlink's read-only player endpoints when the panel is open.
+Character names and SteamID64 values are **not copied into the addon SQLite database**. Any available identity enrichment is requested only through RedBlink's `players:read` addon permission bridge while the panel is open.
 
 ## Chat retention and privacy
 
-The Text Router may expose multiple channel types, including private/direct chat such as whispers. Dune Chat Monitor now stores **all intercepted `TextChat` channels** in its own SQLite database so the monitor can reproduce the complete server chat stream. Server owners should treat `data/chat.sqlite3` and the generated `web/live/` history files as sensitive administrative data and restrict access accordingly.
+The Text Router may expose multiple channel types, including private/direct chat such as **Whispers**. Dune Chat Monitor stores **all intercepted `TextChat` channels**, including private/direct chat when exposed by Text Router, in its own SQLite database. With the default configuration, those messages may be retained for **up to 30 days** (`CHAT_RETENTION_DAYS=30`). Server owners should treat `data/chat.sqlite3` and the generated `web/live/` history files as sensitive administrative data and restrict access accordingly.
 
 The addon still never writes to Dune game data, never consumes Dune queues, and never copies resolved character names or SteamID64 values into its SQLite database.
 
