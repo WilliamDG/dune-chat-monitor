@@ -88,7 +88,14 @@ permissions = set(addon.get("approvedPermissions") or []) if isinstance(addon, d
 lifecycle = str(addon.get("lifecycle") or "") if isinstance(addon, dict) else ""
 enabled = addon.get("enabled") is True if isinstance(addon, dict) else False
 
-if enabled:
+blocked_lifecycles = {"unsupported", "removed", "blocked"}
+
+if lifecycle in blocked_lifecycles:
+    if enabled:
+        print(f"[WARN] Console addon is enabled but lifecycle={lifecycle}; collector must remain paused")
+    else:
+        print(f"[WARN] Console addon is disabled and lifecycle={lifecycle}; collector must remain paused")
+elif enabled:
     print("[OK] Console addon enabled; collection is allowed")
 else:
     print("[WARN] Console addon disabled/missing; collector should remain paused")
