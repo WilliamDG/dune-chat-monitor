@@ -17,8 +17,8 @@ collector/          chat parsing/export logic
 web/index.html      addon markup
 web/app.js          chat UI and player identity enrichment
 web/style.css       addon styling
-install.sh          local host installation
-update.sh           local test update
+install.sh          companion collector installation (Console UI must already be installed)
+update.sh           companion collector update only
 ```
 
 Validate before committing:
@@ -26,14 +26,19 @@ Validate before committing:
 ```bash
 node scripts/validate.js
 python3 -m py_compile collector/collector.py
+python3 scripts/test_collector_lifecycle.py
 bash -n install.sh update.sh uninstall.sh doctor.sh
 ```
 
 For the current local RedBlink v1.4.3 lifecycle issue, see `redblink-v1.4.3-local-addon-workaround.md`.
 
+## Console ownership and collector lifecycle
+
+The Console is the sole owner of `runtime/addons/installed/dune-chat-monitor/` and `runtime/addons/state.json`. The companion `install.sh`, `update.sh`, and `uninstall.sh` do not deploy/remove UI files and do not edit addon state. The collector reads the Console lifecycle state only as a fail-closed gate: it follows Text Router logs only while the addon is installed and `enabled: true`; it stops the log stream while disabled, skips the entire disabled interval on re-enable, and exits cleanly after the Console addon is uninstalled.
+
 ## Chat channels and lazy history
 
-The collector stores every intercepted `TextChat` channel and exposes channel totals in `status.json`. The UI builds its channel tabs dynamically, so new/unknown channel types do not require a frontend release.
+While the Console addon is enabled, the collector stores allowed intercepted `TextChat` channels and exposes channel totals in `status.json`. The UI builds its channel tabs dynamically, so new/unknown channel types do not require a frontend release.
 
 Only the newest `CHAT_PAGE_SIZE` messages are exported in `messages.json`. Older retained messages are exported in fixed-size chunks under `web/live/history/`; the browser loads those chunks only as the user scrolls toward the end of the currently loaded list.
 

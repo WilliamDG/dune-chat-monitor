@@ -36,59 +36,21 @@ if ! grep -q '^CHAT_PAGE_SIZE=' "$CONFIG_FILE" 2>/dev/null; then
   echo "[OK] Added CHAT_PAGE_SIZE=50 for lazy history loading."
 fi
 
-INSTALL_DIR="$DUNE_ROOT/runtime/addons/installed/$ADDON_ID"
-LIVE_DIR="$INSTALL_DIR/web/live"
+echo "Updating Dune Chat Monitor companion collector..."
 
-echo "Updating Dune Chat Monitor..."
-
-mkdir -p "$INSTALL_DIR/web" "$LIVE_DIR"
-
-cp -a "$PROJECT_DIR/addon.json" "$INSTALL_DIR/addon.json"
-
-find "$INSTALL_DIR/web" \
-  -mindepth 1 \
-  -maxdepth 1 \
-  ! -name live \
-  -exec rm -rf {} +
-
-find "$PROJECT_DIR/web" \
-  -mindepth 1 \
-  -maxdepth 1 \
-  ! -name live \
-  -exec cp -a {} "$INSTALL_DIR/web/" \;
-
-# The Console/browser can keep static addon assets cached even when files on
-# disk have changed. Rewrite the deployed asset query strings on every update
-# so UI fixes are loaded immediately after the addon page is reloaded.
-UI_CACHE_BUST="$(date +%s)"
-DEPLOYED_INDEX="$INSTALL_DIR/web/index.html"
-if [[ -f "$DEPLOYED_INDEX" ]]; then
-  python3 - "$DEPLOYED_INDEX" "$UI_CACHE_BUST" <<'PY_CACHE_BUST'
-import re
-import sys
-from pathlib import Path
-
-index_path = Path(sys.argv[1])
-token = sys.argv[2]
-text = index_path.read_text(encoding="utf-8")
-
-for asset in ("style.css", "dune-addon-bridge.js", "app.js"):
-    pattern = rf'(\./{re.escape(asset)})(?:\?v=[^"\']*)?'
-    text, count = re.subn(pattern, lambda match: f"{match.group(1)}?v={token}", text)
-    if count != 1:
-        raise SystemExit(f"[ERROR] Expected exactly one {asset} reference in {index_path}, found {count}")
-
-index_path.write_text(text, encoding="utf-8")
-PY_CACHE_BUST
-  echo "[OK] UI cache-bust token: $UI_CACHE_BUST"
+# The Console owns runtime/addons/installed/<addon-id> and Console addon state.
+# Companion updates must never copy, replace, remove, or mutate those resources.
+SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
+if [[ -f "$SERVICE_FILE" ]]; then
+  # Migrate older installations away from Restart=always so a clean collector
+  # exit after Console uninstall remains stopped instead of respawning forever.
+  sudo sed -i 's/^Restart=always$/Restart=on-failure/' "$SERVICE_FILE"
+  sudo systemctl daemon-reload
 fi
-
-# Permission approval is intentionally left to Dune Docker Console.
-# Do not edit RedBlink addon state from the addon updater.
 
 sudo systemctl restart "$SERVICE_NAME"
 
-echo "[OK] Updated."
+echo "[OK] Companion collector updated."
 echo "[OK] Preserved configuration: $CONFIG_FILE"
 echo "[OK] Preserved database: ${DB_PATH:-$PROJECT_DIR/data/chat.sqlite3}"
-echo "[OK] Addon permission state left unchanged; manage players:read in Dune Docker Console."
+echo "[OK] Console addon files/state left untouched; manage lifecycle and players:read in Dune Docker Console."

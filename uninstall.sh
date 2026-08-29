@@ -38,32 +38,8 @@ sudo systemctl disable --now "$SERVICE_NAME" >/dev/null 2>&1 || true
 sudo rm -f "/etc/systemd/system/$SERVICE_NAME"
 sudo systemctl daemon-reload
 
-if [[ -n "${DUNE_ROOT:-}" ]]; then
-  rm -rf "$DUNE_ROOT/runtime/addons/installed/$ADDON_ID"
-
-  python3 - "$DUNE_ROOT" "$ADDON_ID" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1])
-addon_id = sys.argv[2]
-state_path = root / "runtime" / "addons" / "state.json"
-
-if state_path.exists():
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except Exception:
-        state = {}
-
-    if isinstance(state, dict) and addon_id in state:
-        state.pop(addon_id, None)
-        state_path.write_text(
-            json.dumps(state, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8"
-        )
-PY
-fi
+echo "[OK] Console addon files and Console addon state left untouched."
+echo "     Disable or uninstall the UI separately from Dune Docker Console."
 
 if [[ "$PURGE_DATA" -eq 1 ]]; then
   rm -f \
@@ -82,5 +58,5 @@ else
   echo "[OK] Configuration preserved in $CONFIG_FILE"
 fi
 
-echo "[OK] Dune Chat Monitor uninstalled."
+echo "[OK] Dune Chat Monitor companion collector uninstalled."
 echo "[OK] RabbitMQ was not modified."

@@ -105,6 +105,8 @@ function validateReviewSecurityBoundaries() {
   const appPath = path.join(repoRoot, "web", "app.js");
   const installPath = path.join(repoRoot, "install.sh");
   const updatePath = path.join(repoRoot, "update.sh");
+  const uninstallPath = path.join(repoRoot, "uninstall.sh");
+  const collectorPath = path.join(repoRoot, "collector", "collector.py");
 
   const app = fs.readFileSync(appPath, "utf8");
   if (/\/api\/players(?:\/|\?|[`'\"])/.test(app)) {
@@ -114,11 +116,26 @@ function validateReviewSecurityBoundaries() {
     fail("web/app.js must request player identity data through the addon permission bridge.");
   }
 
-  for (const scriptPath of [installPath, updatePath]) {
+  for (const scriptPath of [installPath, updatePath, uninstallPath]) {
     const script = fs.readFileSync(scriptPath, "utf8");
     if (/approvedPermissions/.test(script) || /runtime[\\/]addons[\\/]state\.json/.test(script)) {
-      fail(`${path.basename(scriptPath)} must not approve addon permissions by editing addon state directly.`);
+      fail(`${path.basename(scriptPath)} must not edit Console addon state directly.`);
     }
+    if (/rm\s+-rf\s+["']?\$INSTALL_DIR/.test(script) ||
+        /cp\s+-a[^\n]*\$INSTALL_DIR/.test(script)) {
+      fail(`${path.basename(scriptPath)} must not replace or copy files into the Console-owned addon directory.`);
+    }
+  }
+
+  const collector = fs.readFileSync(collectorPath, "utf8");
+  if (!collector.includes("addon_collection_state") ||
+      !collector.includes("ADDON_STATE_PATH") ||
+      !collector.includes("AddonCollectionPaused") ||
+      !collector.includes('addon.get("enabled") is not True')) {
+    fail("collector must fail closed against the Console-managed addon lifecycle state.");
+  }
+  if (!collector.includes('set_state(conn, "last_docker_timestamp", iso_utc())')) {
+    fail("collector must skip the disabled interval instead of backfilling chat after re-enable.");
   }
 }
 

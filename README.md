@@ -71,7 +71,7 @@ Recommended installation path:
 `-- uninstall.sh
 ```
 
-The RedBlink Console receives only the installed addon copy under:
+The RedBlink Console owns the installed addon package under:
 
 ```text
 <DUNE_ROOT>/runtime/addons/installed/dune-chat-monitor/
@@ -79,19 +79,21 @@ The RedBlink Console receives only the installed addon copy under:
 
 ## Install
 
-Clone the repository, then:
+Install **Dune Chat Monitor** from Dune Docker Console first. Then clone this source repository on the host and install only the companion collector:
 
 ```bash
 ./install.sh
 ```
 
-The installer:
-1. detects the RedBlink Dune installation;
+The companion installer:
+1. detects the RedBlink Dune installation and verifies that the Console addon package already exists;
 2. uses generic runtime defaults (`30` retention days, `50` messages per history page) without asking for server-specific values;
-3. installs the Console UI addon files;
-4. leaves addon enablement and `players:read` approval to Dune Docker Console / the administrator;
-5. installs a `dune-chat-monitor.service` systemd service;
-6. starts the collector.
+3. does **not** copy, replace, remove, or mutate the Console-owned addon directory or `runtime/addons/state.json`;
+4. leaves addon enablement and `players:read` approval entirely to Dune Docker Console / the administrator;
+5. installs a `dune-chat-monitor.service` systemd service with `Restart=on-failure`;
+6. starts the companion collector.
+
+The collector is lifecycle-gated by the Console state in read-only mode. While the addon is disabled it closes the `docker logs --follow` stream and collects nothing. Messages produced during the disabled interval are deliberately skipped rather than backfilled after re-enable. If the Console addon is uninstalled, the collector exits cleanly after a short grace period and systemd does not respawn it.
 
 No server name or timezone is required. Chat timestamps are stored in UTC and displayed using the browser's local timezone. Runtime defaults can be changed later in `config/dune-chat-monitor.env`.
 
@@ -104,12 +106,18 @@ sudo journalctl -u dune-chat-monitor -n 100 --no-pager
 
 ## Update
 
+Update the Console UI through Dune Docker Console. To update only the host-side companion collector source:
+
 ```bash
 git pull --ff-only
 ./update.sh
 ```
 
+`update.sh` never deploys UI files and never changes Console addon state.
+
 ## Uninstall
+
+The commands below uninstall only the host-side companion collector. They intentionally leave the Console addon package and Console addon state untouched; disable or uninstall the UI separately in Dune Docker Console.
 
 Preserve configuration and chat data:
 

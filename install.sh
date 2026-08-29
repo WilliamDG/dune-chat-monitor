@@ -129,7 +129,10 @@ CHAT_BOOTSTRAP_SINCE="${CHAT_BOOTSTRAP_SINCE:-1h}"
 (( CHAT_RETENTION_DAYS >= 1 )) \
   || die "Retention days must be at least 1."
 
-ADDON_LIVE_DIR="$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/web/live"
+INSTALL_DIR="$DUNE_ROOT/runtime/addons/installed/$ADDON_ID"
+ADDON_LIVE_DIR="$INSTALL_DIR/web/live"
+
+[[ -f "$INSTALL_DIR/addon.json" ]] || die "Dune Chat Monitor is not installed in Dune Docker Console. Install the Community Addon UI first, then run this companion installer."
 
 {
   printf 'CHAT_RETENTION_DAYS=%s\n' "$(env_quote "$CHAT_RETENTION_DAYS")"
@@ -148,20 +151,12 @@ chmod 600 "$CONFIG_FILE"
 ok "Private/local configuration: $CONFIG_FILE"
 ok "No RabbitMQ credentials are stored"
 
-INSTALL_DIR="$DUNE_ROOT/runtime/addons/installed/$ADDON_ID"
-
 say
-say "Installing addon UI..."
-
-rm -rf "$INSTALL_DIR"
-mkdir -p "$INSTALL_DIR"
-cp -a "$PROJECT_DIR/addon.json" "$INSTALL_DIR/"
-cp -a "$PROJECT_DIR/web" "$INSTALL_DIR/"
-mkdir -p "$ADDON_LIVE_DIR"
-
-ok "Addon UI files installed"
-say "Permission approval is managed by Dune Docker Console; approve players:read there when prompted."
-
+say "Preparing companion collector..."
+ok "Console addon detected: $INSTALL_DIR"
+ok "Console-owned addon files and Console addon state will not be modified"
+say "Enable the addon and manage players:read only from Dune Docker Console."
+say
 
 SERVICE_USER="$(stat -c '%U' "$PROJECT_DIR")"
 SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
@@ -183,7 +178,7 @@ Group=$SERVICE_GROUP
 WorkingDirectory=$PROJECT_DIR
 EnvironmentFile=$CONFIG_FILE
 ExecStart=$PYTHON_BIN $PROJECT_DIR/collector/collector.py
-Restart=always
+Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10
 
@@ -211,8 +206,10 @@ else
 fi
 
 say
-say "Installation completed."
-say "Refresh Dune Docker Console, open Addons -> Dune Chat Monitor, and approve players:read if prompted."
+say "Companion collector installation completed."
+say "The collector only follows Text Router logs while the Console addon is installed and enabled."
+say "If the addon is disabled, collection pauses; if it is uninstalled, the collector exits cleanly."
+say "Approve players:read in Dune Docker Console if identity enrichment is desired."
 say
 say "Collector source: $TEXT_ROUTER_CONTAINER Docker logs"
 say "RabbitMQ changes: none"

@@ -58,15 +58,17 @@ fi
 
 if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   ok "Collector service active"
+elif systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+  warn "Collector service is installed but not active (expected after Console addon uninstall; start it after reinstalling the addon)"
 else
   bad "Collector service not active"
 fi
 
 if [[ -n "${DUNE_ROOT:-}" \
    && -f "$DUNE_ROOT/runtime/addons/installed/$ADDON_ID/addon.json" ]]; then
-  ok "Addon UI installed"
+  ok "Console addon UI installed"
 else
-  bad "Addon UI not installed"
+  warn "Console addon UI is not installed; collector must not collect chat"
 fi
 
 if [[ -n "${DUNE_ROOT:-}" && -f "$DUNE_ROOT/runtime/addons/state.json" ]]; then
@@ -84,6 +86,12 @@ except Exception as exc:
 addon = state.get(addon_id, {}) if isinstance(state, dict) else {}
 permissions = set(addon.get("approvedPermissions") or []) if isinstance(addon, dict) else set()
 lifecycle = str(addon.get("lifecycle") or "") if isinstance(addon, dict) else ""
+enabled = addon.get("enabled") is True if isinstance(addon, dict) else False
+
+if enabled:
+    print("[OK] Console addon enabled; collection is allowed")
+else:
+    print("[WARN] Console addon disabled/missing; collector should remain paused")
 
 if "players:read" in permissions:
     print("[OK] Addon permission approved: players:read")
