@@ -633,14 +633,13 @@ async function loadPlayerDirectory() {
 
   // Never call Console player REST endpoints directly from the iframe. The
   // bridge enforces the players:read permission declared by addon.json.
-  const payload = await window.DuneAddon.request("leadership.players.list", {});
+  const payload = await window.DuneAddon.request("players.identity.list", {});
   const rows = rowsFromPlayerPayload(payload);
   rows.forEach(upsertDirectoryIdentity);
 
-  // leadership.players.list intentionally exposes a reduced player shape on
-  // current Console releases. If it does not include a Funcom/platform key,
-  // chat remains fully usable with its native Funcom-ID fallback; Steam/name
-  // enrichment simply stays unavailable rather than bypassing the bridge.
+  // players.identity.list is the permission-controlled identity surface for
+  // addon correlation. It exposes the narrow Funcom/FLS/platform identity
+  // shape without requiring direct access to Console player REST endpoints.
   return rows.length;
 }
 

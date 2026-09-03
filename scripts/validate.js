@@ -112,8 +112,8 @@ function validateReviewSecurityBoundaries() {
   if (/\/api\/players(?:\/|\?|[`'\"])/.test(app)) {
     fail("web/app.js must not call Console player REST endpoints directly; use DuneAddon.request(...).");
   }
-  if (!app.includes('DuneAddon.request("leadership.players.list"')) {
-    fail("web/app.js must request player identity data through the addon permission bridge.");
+  if (!app.includes('DuneAddon.request("players.identity.list"')) {
+    fail("web/app.js must request player identity data through players.identity.list.");
   }
 
   for (const scriptPath of [installPath, updatePath, uninstallPath]) {
