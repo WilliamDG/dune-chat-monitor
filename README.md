@@ -10,7 +10,7 @@ Dune Chat Monitor follows the existing `dune-text-router` Docker logs, extracts 
 
 The collector does **not** consume RabbitMQ queues and does **not** connect to or write to the Dune PostgreSQL database. For Hagga Basin Map chat only, it uses RedBlink's existing read-only `sietches dimensions` CLI command to translate a routed dimension such as `HaggaBasin.0` into the configured Sietch display name; the result is cached and stored with the chat message.
 
-For display-only player identity enrichment, the web UI uses RedBlink's addon permission bridge via `DuneAddon.request("leadership.players.list")`. The Console enforces the declared `players:read` permission. The UI never calls Console player REST endpoints directly. When the bridge does not expose a stable Funcom/platform mapping, the monitor falls back to the Funcom identity already present in chat instead of bypassing the bridge. The addon performs no SQL and stores no Dune database credentials.
+For display-only player identity enrichment, the web UI uses RedBlink's addon permission bridge via `DuneAddon.request("players.identity.list", {})`. The Console enforces the declared `players:read` permission. The UI never calls Console player REST endpoints directly. The bridge exposes the Funcom/FLS/platform identity fields needed to correlate chat senders with character names and Steam identity; if identity enrichment is unavailable, the monitor falls back to the Funcom identity already present in chat instead of bypassing the bridge. The addon performs no SQL and stores no Dune database credentials.
 
 ## Architecture
 
@@ -79,11 +79,19 @@ The RedBlink Console owns the installed addon package under:
 
 ## Install
 
-Install **Dune Chat Monitor** from Dune Docker Console first. Then clone this source repository on the host and install only the companion collector:
+Install **Dune Chat Monitor** from Dune Docker Console first. Then install the host-side companion collector from the **matching release tag**. For catalog version `0.2.7`, use exactly `v0.2.7`:
 
 ```bash
+sudo git clone --branch v0.2.7 --depth 1 \
+  https://github.com/WilliamDG/dune-chat-monitor.git \
+  /opt/dune-chat-monitor
+
+sudo chown -R "$USER":"$(id -gn)" /opt/dune-chat-monitor
+cd /opt/dune-chat-monitor
 ./install.sh
 ```
+
+Do not install the privileged companion from a floating `main` checkout. Pinning the repository to the matching release tag keeps the collector and systemd installer reproducible and aligned with the catalog version.
 
 The companion installer:
 1. detects the RedBlink Dune installation and verifies that the Console addon package already exists;
@@ -106,12 +114,16 @@ sudo journalctl -u dune-chat-monitor -n 100 --no-pager
 
 ## Update
 
-Update the Console UI through Dune Docker Console. To update only the host-side companion collector source:
+Update the Console UI through Dune Docker Console. Update the host-side companion collector only to the **matching release tag** for the catalog/UI version. For `0.2.7`:
 
 ```bash
-git pull --ff-only
+cd /opt/dune-chat-monitor
+git fetch --tags --force
+git checkout --detach v0.2.7
 ./update.sh
 ```
+
+Do not use a floating `git pull` for the privileged companion. When a future catalog release is published, replace `v0.2.7` with that matching release tag before running `./update.sh`.
 
 `update.sh` never deploys UI files and never changes Console addon state.
 
@@ -159,7 +171,7 @@ Character names and SteamID64 values are **not copied into the addon SQLite data
 
 ## Chat retention and privacy
 
-The Text Router may expose private/direct chat such as **Whispers**. Dune Chat Monitor explicitly excludes `Whisper` / `Whispers` channel records **before persistence**, so they are not stored in the addon SQLite database and are not exported to `web/live/`. When upgrading from a release that previously retained Whispers, the collector deletes those legacy rows from its own SQLite database and rebuilds history exports. The configured `CHAT_RETENTION_DAYS` applies only to the remaining allowed chat channels. Server owners should still treat `data/chat.sqlite3` and generated history files as administrative data and restrict access accordingly.
+The Text Router may expose private/direct chat such as **Whispers**. Dune Chat Monitor explicitly excludes `Whisper` / `Whispers` channel records **before persistence**, so they are not stored in the addon SQLite database and are not exported to `web/live/`. When upgrading from a release that previously retained Whispers, the collector deletes those legacy rows from its own SQLite database and rebuilds history exports. The configured `CHAT_RETENTION_DAYS` applies only to the remaining allowed chat channels. Server owners should still treat both `data/chat.sqlite3` and the generated JSON/history files under `web/live/` as administrative data and restrict access accordingly.
 
 The addon still never writes to Dune game data, never consumes Dune queues, and never copies resolved character names or SteamID64 values into its SQLite database.
 

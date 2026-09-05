@@ -32,6 +32,22 @@ bash -n install.sh update.sh uninstall.sh doctor.sh
 
 For the current local RedBlink v1.4.3 lifecycle issue, see `redblink-v1.4.3-local-addon-workaround.md`.
 
+## Version-pinned companion installation
+
+The Console UI and the host-side companion must use the same release version. For catalog version `0.2.7`, install the companion from tag `v0.2.7` rather than a floating branch:
+
+```bash
+sudo git clone --branch v0.2.7 --depth 1 \
+  https://github.com/WilliamDG/dune-chat-monitor.git \
+  /opt/dune-chat-monitor
+
+sudo chown -R "$USER":"$(id -gn)" /opt/dune-chat-monitor
+cd /opt/dune-chat-monitor
+./install.sh
+```
+
+For updates, fetch tags and check out the tag matching the new catalog/UI version before running `./update.sh`; do not use a floating `git pull` for the privileged companion.
+
 ## Console ownership and collector lifecycle
 
 The Console is the sole owner of `runtime/addons/installed/dune-chat-monitor/` and `runtime/addons/state.json`. The companion `install.sh`, `update.sh`, and `uninstall.sh` do not deploy/remove UI files and do not edit addon state. The collector reads the Console lifecycle state only as a fail-closed gate: it follows Text Router logs only while the addon is installed and `enabled: true`; it stops the log stream while disabled, skips the entire disabled interval on re-enable, and exits cleanly after the Console addon is uninstalled.
@@ -46,4 +62,4 @@ Timestamps are stored/exported in UTC. The web UI formats them in the browser's 
 
 Private/direct `Whisper` / `Whispers` channel records are explicitly excluded before persistence and are not written to the addon's SQLite database or history exports. On upgrade, legacy Whisper rows from older releases are removed from the addon's SQLite database and the exported history is rebuilt. The normal retention setting applies only to the remaining allowed chat channels.
 
-The UI requests optional identity enrichment only through RedBlink's addon permission bridge (`DuneAddon.request("leadership.players.list")`), which enforces `players:read`. It does not call Console player REST endpoints directly. When the bridge cannot provide a stable Funcom/platform mapping, the UI keeps the Funcom-ID fallback and leaves Steam-specific actions unavailable. For Map chat, the collector also observes Text Router routing keys such as `HaggaBasin.0`. The numeric dimension is stored with the message and resolved through RedBlink's read-only `runtime/scripts/dune sietches dimensions Survival_1 --active-only --labels` command, so Hagga Basin messages can display `Hagga Basin - Sietch Abbir` (or the server's configured Sietch display name). If a Sietch label cannot be resolved, the UI falls back to the map name only.
+The UI requests optional identity enrichment only through RedBlink's addon permission bridge (`DuneAddon.request("players.identity.list", {})`), which enforces `players:read`. It does not call Console player REST endpoints directly. The bridge provides the Funcom/FLS/platform identity fields needed for sender correlation and Steam actions. If identity enrichment is unavailable, the UI keeps the Funcom-ID fallback. For Map chat, the collector also observes Text Router routing keys such as `HaggaBasin.0`. The numeric dimension is stored with the message and resolved through RedBlink's read-only `runtime/scripts/dune sietches dimensions Survival_1 --active-only --labels` command, so Hagga Basin messages can display `Hagga Basin - Sietch Abbir` (or the server's configured Sietch display name). If a Sietch label cannot be resolved, the UI falls back to the map name only.
