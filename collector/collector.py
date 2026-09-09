@@ -152,6 +152,11 @@ class AddonCollectionPaused(RuntimeError):
     pass
 
 
+class AddonExportReset(RuntimeError):
+    """Generated Console addon export files were replaced while collection stayed enabled."""
+    pass
+
+
 def open_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -266,6 +271,61 @@ def set_state(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.commit()
 
 
+COLLECTION_PAUSED_STATE_KEY = "collection_paused"
+
+
+def mark_collection_paused(conn: sqlite3.Connection) -> bool:
+    """Persist that collection entered a disabled/unavailable interval."""
+    if get_state(conn, COLLECTION_PAUSED_STATE_KEY) == "1":
+        return False
+
+    boundary = iso_utc()
+    conn.execute(
+        """
+        INSERT INTO collector_state(key, value)
+        VALUES ('last_docker_timestamp', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (boundary,),
+    )
+    conn.execute(
+        """
+        INSERT INTO collector_state(key, value)
+        VALUES (?, '1')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (COLLECTION_PAUSED_STATE_KEY,),
+    )
+    conn.commit()
+    return True
+
+
+def resume_from_persisted_pause(conn: sqlite3.Connection) -> bool:
+    """Advance the cursor to now and atomically clear a persisted pause marker."""
+    if get_state(conn, COLLECTION_PAUSED_STATE_KEY) != "1":
+        return False
+
+    boundary = iso_utc()
+    conn.execute(
+        """
+        INSERT INTO collector_state(key, value)
+        VALUES ('last_docker_timestamp', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (boundary,),
+    )
+    conn.execute(
+        """
+        INSERT INTO collector_state(key, value)
+        VALUES (?, '0')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (COLLECTION_PAUSED_STATE_KEY,),
+    )
+    conn.commit()
+    return True
+
+
 def atomic_json(path: Path, payload: Any) -> None:
     # Export parents are prepared only while the Console addon is enabled. Do
     # not recreate them here: they may have disappeared because the Console
@@ -273,7 +333,7 @@ def atomic_json(path: Path, payload: Any) -> None:
     if addon_collection_state()[0] != "enabled":
         raise AddonCollectionPaused("Console addon is not enabled for export")
     if not path.parent.is_dir():
-        raise AddonCollectionPaused(f"Export directory is unavailable: {path.parent}")
+        raise AddonExportReset(f"Generated export directory was replaced: {path.parent}")
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{path.name}.",
         suffix=".tmp",
@@ -520,6 +580,42 @@ def export_messages(
     if history_bucket is not None:
         export_history_bucket(conn, history_bucket)
         export_history_index(conn)
+
+
+def export_layout_ready() -> bool:
+    """Return whether the generated live/history layout still exists."""
+    history_dir = EXPORT_DIR / "history"
+    return (
+        EXPORT_DIR.is_dir()
+        and (EXPORT_DIR / "messages.json").is_file()
+        and (EXPORT_DIR / "status.json").is_file()
+        and history_dir.is_dir()
+        and (history_dir / "index.json").is_file()
+    )
+
+
+def ensure_exports_initialized(conn: sqlite3.Connection, initialized: bool) -> bool:
+    """Create or rebuild generated exports after startup or package replacement."""
+    ensure_export_dir()
+
+    if initialized and export_layout_ready():
+        return True
+
+    if initialized:
+        print(
+            "[EXPORT] Console addon package/export layout changed; "
+            "rebuilding generated history",
+            flush=True,
+        )
+
+    rebuild_history(conn)
+    export_messages(
+        conn,
+        connected=False,
+        error="Waiting for text-router log stream",
+    )
+    return True
+
 
 def cleanup_old(conn: sqlite3.Connection) -> None:
     cutoff = now_utc() - timedelta(days=RETENTION_DAYS)
@@ -1007,7 +1103,6 @@ def stream_logs(conn: sqlite3.Connection) -> None:
 
     assert proc.stdout is not None
 
-    export_messages(conn, connected=True)
     handled_since_cleanup = 0
     pending = b""
 
@@ -1083,15 +1178,23 @@ def stream_logs(conn: sqlite3.Connection) -> None:
         )
 
     try:
+        if not export_layout_ready():
+            raise AddonExportReset(
+                "Generated Console addon export layout is unavailable; rebuilding"
+            )
+        export_messages(conn, connected=True)
+
         while True:
             lifecycle_state, lifecycle_reason = addon_collection_state()
             if lifecycle_state != "enabled":
                 stop_log_process()
-                # Move the cursor to the pause boundary. main() moves it again
-                # when collection is re-enabled, so chat produced while the addon
-                # is disabled is never backfilled later.
-                set_state(conn, "last_docker_timestamp", iso_utc())
+                mark_collection_paused(conn)
                 raise AddonCollectionPaused(lifecycle_reason)
+
+            if not export_layout_ready():
+                raise AddonExportReset(
+                    "Console addon package/export layout changed while collector was running"
+                )
 
             ready, _, _ = select.select(
                 [proc.stdout],
@@ -1117,8 +1220,13 @@ def stream_logs(conn: sqlite3.Connection) -> None:
             # without re-reading state.json for every Text Router log line.
             lifecycle_state, lifecycle_reason = addon_collection_state()
             if lifecycle_state != "enabled":
-                set_state(conn, "last_docker_timestamp", iso_utc())
+                mark_collection_paused(conn)
                 raise AddonCollectionPaused(lifecycle_reason)
+
+            if not export_layout_ready():
+                raise AddonExportReset(
+                    "Console addon package/export layout changed before processing log data"
+                )
 
             pending += chunk
             while b"\n" in pending:
@@ -1134,7 +1242,6 @@ def main() -> int:
     cleanup_old(conn)
 
     retry = 2
-    was_paused = False
     missing_since: float | None = None
     last_pause_reason = ""
     export_initialized = False
@@ -1143,9 +1250,9 @@ def main() -> int:
         lifecycle_state, lifecycle_reason = addon_collection_state()
 
         if lifecycle_state == "missing":
+            mark_collection_paused(conn)
             if missing_since is None:
                 missing_since = time.monotonic()
-            was_paused = True
             if lifecycle_reason != last_pause_reason:
                 print(f"[PAUSED] {lifecycle_reason}", flush=True)
                 last_pause_reason = lifecycle_reason
@@ -1162,7 +1269,7 @@ def main() -> int:
         missing_since = None
 
         if lifecycle_state != "enabled":
-            was_paused = True
+            mark_collection_paused(conn)
             if lifecycle_reason != last_pause_reason:
                 print(f"[PAUSED] {lifecycle_reason}", flush=True)
                 last_pause_reason = lifecycle_reason
@@ -1173,42 +1280,66 @@ def main() -> int:
             print("[LIFECYCLE] Console addon enabled; collection may resume", flush=True)
             last_pause_reason = ""
 
-        if was_paused:
-            # Skip the entire interval during which the Console addon was
-            # disabled/unavailable. This prevents disabled-time chat from being
-            # replayed from Docker logs when the addon is enabled again.
-            set_state(conn, "last_docker_timestamp", iso_utc())
-            was_paused = False
+        if resume_from_persisted_pause(conn):
+            print(
+                "[LIFECYCLE] persisted pause detected; Docker cursor advanced "
+                "to skip the disabled interval",
+                flush=True,
+            )
 
-        ensure_export_dir()
-        if not export_initialized:
-            rebuild_history(conn)
-            export_messages(conn, connected=False, error="Waiting for text-router log stream")
-            export_initialized = True
+        try:
+            export_initialized = ensure_exports_initialized(conn, export_initialized)
+        except AddonExportReset as exc:
+            export_initialized = False
+            print(f"[EXPORT] {exc}", flush=True)
+            time.sleep(LIFECYCLE_POLL_SECONDS)
+            continue
+        except AddonCollectionPaused as exc:
+            mark_collection_paused(conn)
+            export_initialized = False
+            last_pause_reason = str(exc)
+            print(f"[PAUSED] {exc}", flush=True)
+            time.sleep(LIFECYCLE_POLL_SECONDS)
+            continue
 
         if not docker_container_running():
             error = f"{TEXT_ROUTER_CONTAINER} is not running; retrying"
             print(f"[WAIT] {error}", flush=True)
-            export_messages(conn, connected=False, error=error)
+            try:
+                export_messages(conn, connected=False, error=error)
+            except AddonExportReset as exc:
+                export_initialized = False
+                print(f"[EXPORT] {exc}", flush=True)
             time.sleep(retry)
             continue
 
         try:
             stream_logs(conn)
+        except AddonExportReset as exc:
+            export_initialized = False
+            print(f"[EXPORT] {exc}", flush=True)
+            time.sleep(LIFECYCLE_POLL_SECONDS)
         except AddonCollectionPaused as exc:
-            was_paused = True
+            mark_collection_paused(conn)
+            export_initialized = False
             last_pause_reason = str(exc)
             print(f"[PAUSED] {exc}", flush=True)
             time.sleep(LIFECYCLE_POLL_SECONDS)
         except KeyboardInterrupt:
             if addon_collection_state()[0] == "enabled":
-                export_messages(conn, connected=False, error="Collector stopped")
+                try:
+                    export_messages(conn, connected=False, error="Collector stopped")
+                except AddonExportReset:
+                    pass
             return 0
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             print(f"[RETRY] {error}", file=sys.stderr, flush=True)
             if addon_collection_state()[0] == "enabled":
-                export_messages(conn, connected=False, error=error)
+                try:
+                    export_messages(conn, connected=False, error=error)
+                except AddonExportReset:
+                    export_initialized = False
             time.sleep(retry)
 
 

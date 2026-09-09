@@ -134,8 +134,16 @@ function validateReviewSecurityBoundaries() {
       !collector.includes('addon.get("enabled") is not True')) {
     fail("collector must fail closed against the Console-managed addon lifecycle state.");
   }
-  if (!collector.includes('set_state(conn, "last_docker_timestamp", iso_utc())')) {
-    fail("collector must skip the disabled interval instead of backfilling chat after re-enable.");
+  if (!collector.includes("COLLECTION_PAUSED_STATE_KEY") ||
+      !collector.includes("mark_collection_paused") ||
+      !collector.includes("resume_from_persisted_pause")) {
+    fail("collector must persist pause state across restarts and skip the disabled interval.");
+  }
+
+  if (!collector.includes("AddonExportReset") ||
+      !collector.includes("export_layout_ready") ||
+      !collector.includes("ensure_exports_initialized")) {
+    fail("collector must detect Console package replacement and rebuild generated exports.");
   }
 }
 
