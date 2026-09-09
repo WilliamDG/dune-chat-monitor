@@ -79,10 +79,10 @@ The RedBlink Console owns the installed addon package under:
 
 ## Install
 
-Install **Dune Chat Monitor** from Dune Docker Console first. Then install the host-side companion collector from the **matching release tag**. For catalog version `0.2.7`, use exactly `v0.2.7`:
+Install **Dune Chat Monitor** from Dune Docker Console first. Then install the host-side companion collector from the **matching release tag**. For catalog version `0.2.8`, use exactly `v0.2.8`:
 
 ```bash
-sudo git clone --branch v0.2.7 --depth 1 \
+sudo git clone --branch v0.2.8 --depth 1 \
   https://github.com/WilliamDG/dune-chat-monitor.git \
   /opt/dune-chat-monitor
 
@@ -114,16 +114,16 @@ sudo journalctl -u dune-chat-monitor -n 100 --no-pager
 
 ## Update
 
-Update the Console UI through Dune Docker Console. Update the host-side companion collector only to the **matching release tag** for the catalog/UI version. For `0.2.7`:
+Update the Console UI through Dune Docker Console. Update the host-side companion collector only to the **matching release tag** for the catalog/UI version. For `0.2.8`:
 
 ```bash
 cd /opt/dune-chat-monitor
 git fetch --tags --force
-git checkout --detach v0.2.7
+git checkout --detach v0.2.8
 ./update.sh
 ```
 
-Do not use a floating `git pull` for the privileged companion. When a future catalog release is published, replace `v0.2.7` with that matching release tag before running `./update.sh`.
+Do not use a floating `git pull` for the privileged companion. When a future catalog release is published, replace `v0.2.8` with that matching release tag before running `./update.sh`.
 
 `update.sh` never deploys UI files and never changes Console addon state.
 
