@@ -9,8 +9,8 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v zip >/dev/null 2>&1; then
-  echo "zip is required to package the addon." >&2
+if ! command -v zip >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+  echo "zip or python3 is required to package the addon." >&2
   exit 1
 fi
 
@@ -23,7 +23,31 @@ PACKAGE_NAME="${ADDON_ID}-${ADDON_VERSION}.zip"
 rm -rf dist
 mkdir -p dist
 
-zip -r "dist/${PACKAGE_NAME}" addon.json web -x "*.DS_Store" >/dev/null
+if command -v zip >/dev/null 2>&1; then
+  zip -r "dist/${PACKAGE_NAME}" addon.json web -x "*.DS_Store" >/dev/null
+else
+  python3 - "dist/${PACKAGE_NAME}" <<'PY'
+import sys
+import zipfile
+from pathlib import Path
+
+output = Path(sys.argv[1])
+inputs = [Path("addon.json"), Path("web")]
+
+with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    for source in inputs:
+        if source.is_file():
+            archive.write(source, source.as_posix())
+            continue
+
+        for path in sorted(source.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.name == ".DS_Store":
+                continue
+            archive.write(path, path.as_posix())
+PY
+fi
 
 echo "Created: dist/${PACKAGE_NAME}"
 
