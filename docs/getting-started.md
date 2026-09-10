@@ -34,10 +34,10 @@ For the current local RedBlink v1.4.3 lifecycle issue, see `redblink-v1.4.3-loca
 
 ## Version-pinned companion installation
 
-The Console UI and the host-side companion must use the same release version. For catalog version `0.2.8`, install the companion from tag `v0.2.8` rather than a floating branch:
+The Console UI and the host-side companion must use the same release version. For catalog version `0.2.9`, install the companion from tag `v0.2.9` rather than a floating branch:
 
 ```bash
-sudo git clone --branch v0.2.8 --depth 1 \
+sudo git clone --branch v0.2.9 --depth 1 \
   https://github.com/WilliamDG/dune-chat-monitor.git \
   /opt/dune-chat-monitor
 

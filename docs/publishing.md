@@ -21,11 +21,11 @@ bash scripts/package.sh
 
 ## Release
 
-For version `0.2.8`:
+For version `0.2.9`:
 
 ```bash
-git tag v0.2.8
-git push origin v0.2.8
+git tag v0.2.9
+git push origin v0.2.9
 ```
 
 GitHub Actions should publish the package and checksum.
