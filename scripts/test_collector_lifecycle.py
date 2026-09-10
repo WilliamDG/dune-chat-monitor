@@ -5,6 +5,7 @@ import importlib.util
 import json
 import shutil
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 
@@ -160,12 +161,103 @@ def test_console_package_replacement_rebuilds_exports(collector) -> None:
         conn.close()
 
 
+
+def test_retention_runs_without_new_messages_and_refreshes_exports(collector) -> None:
+    """Regression: retention must run on wall-clock time without new chat."""
+    with tempfile.TemporaryDirectory(prefix="dune-chat-monitor-retention-") as tmp_name:
+        dune_root = Path(tmp_name)
+        _, _, state_path, export_dir = configure_runtime(collector, dune_root)
+
+        write_state(state_path, enabled=True)
+        conn = collector.open_db()
+
+        now = collector.now_utc()
+        expired_at = now - timedelta(days=collector.RETENTION_DAYS, seconds=10)
+        retained_at = now - timedelta(days=collector.RETENTION_DAYS) + timedelta(seconds=10)
+
+        conn.execute(
+            """
+            INSERT INTO messages(message_id, received_at, channel, raw_inner_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "retention-expired",
+                collector.iso_utc(expired_at),
+                "Map",
+                "{}",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO messages(message_id, received_at, channel, raw_inner_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "retention-retained",
+                collector.iso_utc(retained_at),
+                "Map",
+                "{}",
+            ),
+        )
+        conn.commit()
+
+        assert collector.ensure_exports_initialized(conn, False) is True
+
+        # Make the wall-clock cleanup due. No save_message()/new chat occurs
+        # between export initialization and retention enforcement.
+        collector.set_state(
+            conn,
+            collector.RETENTION_CLEANUP_STATE_KEY,
+            collector.iso_utc(
+                now - timedelta(
+                    seconds=collector.RETENTION_CLEANUP_INTERVAL_SECONDS + 1
+                )
+            ),
+        )
+
+        removed = collector.maybe_enforce_retention(
+            conn,
+            connected=True,
+            refresh_exports=True,
+            now=now,
+        )
+
+        assert removed == 1
+
+        ids = {
+            row["message_id"]
+            for row in conn.execute("SELECT message_id FROM messages").fetchall()
+        }
+        assert "retention-expired" not in ids
+        assert "retention-retained" in ids
+
+        messages_payload = json.loads(
+            (export_dir / "messages.json").read_text(encoding="utf-8")
+        )
+        exported_ids = {
+            item["id"] for item in messages_payload.get("messages", [])
+        }
+        assert "retention-expired" not in exported_ids
+        assert "retention-retained" in exported_ids
+
+        history_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (export_dir / "history").glob("*.json")
+        )
+        assert "retention-expired" not in history_text
+        assert "retention-retained" in history_text
+
+        conn.close()
+
+
+
 def main() -> int:
     collector = load_collector()
 
     test_lifecycle_gate(collector)
     test_pause_persists_across_collector_restart(collector)
     test_console_package_replacement_rebuilds_exports(collector)
+    test_retention_runs_without_new_messages_and_refreshes_exports(collector)
 
     print("Collector lifecycle regression tests passed.")
     return 0

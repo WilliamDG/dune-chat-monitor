@@ -45,7 +45,7 @@ When your addon is inside Dune Docker Console, calls like this go through the
 real bridge:
 
 ```js
-const result = await window.DuneAddon.request("leadership.players.list");
+const result = await window.DuneAddon.request("players.identity.list");
 ```
 
 When your addon is opened directly in a browser, there is no parent console
@@ -66,7 +66,7 @@ async function loadPlayersForDevelopment() {
     ];
   }
 
-  const result = await window.DuneAddon.request("leadership.players.list");
+  const result = await window.DuneAddon.request("players.identity.list");
   return result.players || result || [];
 }
 ```

@@ -33,6 +33,7 @@ ADDON_MANIFEST_PATH = (
     DUNE_ROOT / "runtime" / "addons" / "installed" / ADDON_ID / "addon.json"
 ) if DUNE_ROOT else None
 LIFECYCLE_POLL_SECONDS = 1.0
+RETENTION_CLEANUP_INTERVAL_SECONDS = 60.0
 UNINSTALLED_GRACE_SECONDS = 10.0
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -617,13 +618,60 @@ def ensure_exports_initialized(conn: sqlite3.Connection, initialized: bool) -> b
     return True
 
 
-def cleanup_old(conn: sqlite3.Connection) -> None:
-    cutoff = now_utc() - timedelta(days=RETENTION_DAYS)
-    conn.execute(
+RETENTION_CLEANUP_STATE_KEY = "last_retention_cleanup_at"
+
+
+def cleanup_old(
+    conn: sqlite3.Connection,
+    *,
+    now: datetime | None = None,
+) -> int:
+    cutoff = (now or now_utc()) - timedelta(days=RETENTION_DAYS)
+    cur = conn.execute(
         "DELETE FROM messages WHERE received_at < ?",
         (iso_utc(cutoff),),
     )
     conn.commit()
+    return max(0, int(cur.rowcount or 0))
+
+
+def maybe_enforce_retention(
+    conn: sqlite3.Connection,
+    *,
+    connected: bool,
+    refresh_exports: bool,
+    force: bool = False,
+    now: datetime | None = None,
+) -> int:
+    """Enforce retention on wall-clock time, independent of chat traffic."""
+    current = now or now_utc()
+    last_raw = get_state(conn, RETENTION_CLEANUP_STATE_KEY)
+
+    if not force and last_raw:
+        try:
+            last = datetime.fromisoformat(last_raw.replace("Z", "+00:00"))
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if current - last < timedelta(seconds=RETENTION_CLEANUP_INTERVAL_SECONDS):
+                return 0
+        except (TypeError, ValueError):
+            pass
+
+    removed = cleanup_old(conn, now=current)
+    set_state(conn, RETENTION_CLEANUP_STATE_KEY, iso_utc(current))
+
+    if removed:
+        print(
+            f"[CLEANUP] removed {removed} expired chat row(s) "
+            f"older than {RETENTION_DAYS} day(s)",
+            flush=True,
+        )
+
+        if refresh_exports:
+            rebuild_history(conn)
+            export_messages(conn, connected=connected)
+
+    return removed
 
 
 def safe_preview(value: str | None, limit: int = 120) -> str:
@@ -1103,7 +1151,6 @@ def stream_logs(conn: sqlite3.Connection) -> None:
 
     assert proc.stdout is not None
 
-    handled_since_cleanup = 0
     pending = b""
 
     def stop_log_process() -> None:
@@ -1117,8 +1164,6 @@ def stream_logs(conn: sqlite3.Connection) -> None:
             proc.wait(timeout=3)
 
     def handle_line(raw_line: str) -> None:
-        nonlocal handled_since_cleanup
-
         ts_match = DOCKER_TS_RE.match(raw_line)
         docker_ts = ts_match.group("ts") if ts_match else None
 
@@ -1157,7 +1202,6 @@ def stream_logs(conn: sqlite3.Connection) -> None:
         if inserted_id is None:
             return
 
-        handled_since_cleanup += 1
         print(
             "[CHAT] "
             f"channel={message['channel']} "
@@ -1165,11 +1209,6 @@ def stream_logs(conn: sqlite3.Connection) -> None:
             f"id={message['message_id']}",
             flush=True,
         )
-
-        if handled_since_cleanup >= 100:
-            cleanup_old(conn)
-            rebuild_history(conn)
-            handled_since_cleanup = 0
 
         export_messages(
             conn,
@@ -1185,6 +1224,12 @@ def stream_logs(conn: sqlite3.Connection) -> None:
         export_messages(conn, connected=True)
 
         while True:
+            maybe_enforce_retention(
+                conn,
+                connected=True,
+                refresh_exports=True,
+            )
+
             lifecycle_state, lifecycle_reason = addon_collection_state()
             if lifecycle_state != "enabled":
                 stop_log_process()
@@ -1239,7 +1284,12 @@ def stream_logs(conn: sqlite3.Connection) -> None:
 def main() -> int:
     ensure_local_dirs()
     conn = open_db()
-    cleanup_old(conn)
+    maybe_enforce_retention(
+        conn,
+        connected=False,
+        refresh_exports=False,
+        force=True,
+    )
 
     retry = 2
     missing_since: float | None = None
@@ -1248,6 +1298,18 @@ def main() -> int:
 
     while True:
         lifecycle_state, lifecycle_reason = addon_collection_state()
+
+        removed_by_retention = maybe_enforce_retention(
+            conn,
+            connected=False,
+            refresh_exports=False,
+        )
+        if removed_by_retention:
+            # If collection is enabled, the normal initialization path below
+            # immediately rebuilds exports from the pruned database. While
+            # disabled/uninstalled we intentionally do not write Console-owned
+            # export files; they will be rebuilt after the addon is enabled.
+            export_initialized = False
 
         if lifecycle_state == "missing":
             mark_collection_paused(conn)
